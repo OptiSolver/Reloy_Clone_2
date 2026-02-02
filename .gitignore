@@ -1,0 +1,20 @@
+# dependencies
+node_modules
+
+# env
+.env
+.env.*
+*.local
+
+# build outputs
+.next
+dist
+out
+coverage
+
+# misc
+.DS_Store
+*.log
+
+# turbo / monorepo
+.turbo
