@@ -58,6 +58,7 @@ export const staff = pgTable("staff", {
     .references(() => branches.id),
   fullName: text("full_name").notNull(),
   role: text("role").notNull(), // ej: admin, cashier, manager
+  authUserId: uuid("auth_user_id"),
   pinHash: text("pin_hash"), // PIN numérico hasheado (opcional por ahora)
   isActive: boolean("is_active").default(true).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
