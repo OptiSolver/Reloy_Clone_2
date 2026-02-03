@@ -1,26 +1,35 @@
-import { db, events } from "@loop/db";
+import { pool } from "@loop/db";
+import { CreateEventInput } from "../contracts/event";
 
-type CreateEventInput = {
-  merchantId: string;
-  branchId?: string | null;
-  customerId: string;
-  staffId?: string | null;
-  type: "visit"; // por ahora solo 'visit' (MVP)
-  payload: Record<string, unknown>;
+export type EventRow = {
+  id: string;
+  merchant_id: string;
+  branch_id: string | null;
+  customer_id: string;
+  staff_id: string | null;
+  type: string;
+  payload: unknown;
+  occurred_at: string;
+  created_at: string;
 };
 
-export async function createEvent(input: CreateEventInput) {
-  const [row] = await db
-    .insert(events)
-    .values({
-      merchantId: input.merchantId,
-      branchId: input.branchId ?? null,
-      customerId: input.customerId,
-      staffId: input.staffId ?? null,
-      type: input.type,
-      payload: input.payload,
-    })
-    .returning({ id: events.id });
+export async function createEvent(input: CreateEventInput): Promise<EventRow> {
+  const { merchant_id, branch_id, customer_id, type, payload } = input;
 
-  return { id: row.id };
+  const result = await pool.query<EventRow>(
+    `
+    INSERT INTO events (
+      merchant_id,
+      branch_id,
+      customer_id,
+      type,
+      payload
+    )
+    VALUES ($1, $2, $3, $4, $5)
+    RETURNING *
+    `,
+    [merchant_id, branch_id, customer_id, type, payload]
+  );
+
+  return result.rows[0];
 }
