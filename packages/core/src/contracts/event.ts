@@ -1,32 +1,5 @@
 import { z } from "zod";
-
-/**
- * Tipos de evento MVP (después los ampliamos)
- * - visit: visita única (rubros "single")
- * - checkin / checkout: rubros "in_out"
- * - redeem: canje
- */
-export const EventTypeSchema = z.enum(["visit", "checkin", "checkout", "redeem"]);
-export type EventType = z.infer<typeof EventTypeSchema>;
-
-/**
- * Payload por tipo de evento (MVP)
- * - visit/checkin/checkout: por ahora aceptamos objeto libre
- * - redeem: requiere reward_id
- */
-const VisitPayloadSchema = z.record(z.string(), z.unknown()); // flexible por ahora
-const CheckInPayloadSchema = z.record(z.string(), z.unknown());
-const CheckOutPayloadSchema = z.record(z.string(), z.unknown());
-const RedeemPayloadSchema = z.object({
-  reward_id: z.string().uuid(),
-});
-
-export const PayloadByType = {
-  visit: VisitPayloadSchema,
-  checkin: CheckInPayloadSchema,
-  checkout: CheckOutPayloadSchema,
-  redeem: RedeemPayloadSchema,
-} as const;
+import { EventTypeSchema, PayloadByType } from "./event-types";
 
 /**
  * Input de creación de evento
@@ -77,7 +50,6 @@ export const CreateEventInputSchema = z
     }
 
     const payloadSchema = PayloadByType[data.type];
-
     const result = payloadSchema.safeParse(data.payload);
 
     if (!result.success) {
