@@ -1,25 +1,31 @@
-/**
- * Presencia del cliente (MVP)
- * - "in": si el último evento es checkin
- * - "out": si el último evento es checkout o visit/redeem
- *
- * Nota: en rubros "single" (visit) no tiene sentido presencia in/out,
- * pero devolvemos "out" por default.
- */
-export type CustomerPresence = "in" | "out";
+import { z } from "zod";
+import { EventTypeSchema } from "../contracts/event-types";
 
-export type ComputeCustomerPresenceInput = {
-  lastEventType?: string | null;
-};
+/**
+ * Presence MVP:
+ * - checkin  => "in"
+ * - checkout => "out"
+ * - visit/redeem => null (no afecta presencia)
+ */
+export const ComputeCustomerPresenceInputSchema = z.object({
+  lastEventAt: z.coerce.date(), // hoy no lo usamos, pero lo dejamos para futuro
+  lastEventType: EventTypeSchema,
+});
+
+export type ComputeCustomerPresenceInput = z.infer<
+  typeof ComputeCustomerPresenceInputSchema
+>;
+
+export type CustomerPresence = "in" | "out" | null;
 
 export function computeCustomerPresence(
   input: ComputeCustomerPresenceInput
 ): CustomerPresence {
-  const t = (input.lastEventType ?? "").toLowerCase();
+  const { lastEventType } = input;
 
-  if (t === "checkin") return "in";
-  if (t === "checkout") return "out";
+  if (lastEventType === "checkin") return "in";
+  if (lastEventType === "checkout") return "out";
 
-  // para visit/redeem u otros eventos, asumimos que no queda "adentro"
-  return "out";
+  // visit / redeem no cambian presencia (MVP)
+  return null;
 }

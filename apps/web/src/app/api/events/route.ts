@@ -7,6 +7,7 @@ import {
   EventsQuerySchema,
   computeCustomerStatus,
   computeCustomerPresence,
+  EventTypeSchema,
 } from "@loop/core";
 import { pool } from "@loop/db";
 
@@ -17,7 +18,6 @@ import { pool } from "@loop/db";
 function toArgentinaTimeString(date: string | Date) {
   const d = typeof date === "string" ? new Date(date) : date;
 
-  // "sv-SE" => formato muy cómodo: "YYYY-MM-DD HH:mm:ss"
   return new Intl.DateTimeFormat("sv-SE", {
     timeZone: "America/Argentina/Buenos_Aires",
     year: "numeric",
@@ -37,7 +37,7 @@ function toArgentinaTimeString(date: string | Date) {
  * o camelCase (core / mappers)
  */
 type EventRow = Record<string, unknown> & {
-  type?: string;
+  type?: unknown;
 
   occurred_at?: string | Date;
   created_at?: string | Date;
@@ -91,18 +91,28 @@ export async function GET(req: Request) {
     if (parsed.customer_id && result.rows.length > 0) {
       const last = result.rows[0] as EventRow;
 
-      const lastEventAt = last.occurred_at ?? last.occurredAt;
+      const lastEventAtRaw = last.occurred_at ?? last.occurredAt;
+      const lastEventAt = lastEventAtRaw ? new Date(lastEventAtRaw) : null;
+
+      // type viene de DB como string => lo validamos al union de EventType
+      const parsedType = EventTypeSchema.safeParse(last.type);
+      const lastEventType = parsedType.success ? parsedType.data : null;
+
+      const totalEvents = result.rows.length;
 
       if (lastEventAt) {
         customerStatus = computeCustomerStatus({
-          lastEventAt: new Date(lastEventAt),
-          totalEvents: result.rows.length,
+          lastEventAt,
+          totalEvents,
         });
       }
 
-      customerPresence = computeCustomerPresence({
-        lastEventType: last.type ?? null,
-      });
+      if (lastEventAt && lastEventType) {
+        customerPresence = computeCustomerPresence({
+          lastEventAt,
+          lastEventType,
+        });
+      }
     }
 
     return NextResponse.json({
