@@ -6,6 +6,7 @@ import {
   createEvent,
   EventsQuerySchema,
   computeCustomerStatus,
+  computeCustomerPresence,
 } from "@loop/core";
 import { pool } from "@loop/db";
 
@@ -36,6 +37,8 @@ function toArgentinaTimeString(date: string | Date) {
  * o camelCase (core / mappers)
  */
 type EventRow = Record<string, unknown> & {
+  type?: string;
+
   occurred_at?: string | Date;
   created_at?: string | Date;
   occurredAt?: string | Date;
@@ -83,9 +86,11 @@ export async function GET(req: Request) {
     const result = await pool.query(sql, params);
 
     let customerStatus: string | null = null;
+    let customerPresence: "in" | "out" | null = null;
 
     if (parsed.customer_id && result.rows.length > 0) {
       const last = result.rows[0] as EventRow;
+
       const lastEventAt = last.occurred_at ?? last.occurredAt;
 
       if (lastEventAt) {
@@ -94,6 +99,10 @@ export async function GET(req: Request) {
           totalEvents: result.rows.length,
         });
       }
+
+      customerPresence = computeCustomerPresence({
+        lastEventType: last.type ?? null,
+      });
     }
 
     return NextResponse.json({
@@ -109,6 +118,7 @@ export async function GET(req: Request) {
         };
       }),
       customer_status: customerStatus,
+      customer_presence: customerPresence,
     });
   } catch (error: unknown) {
     const message =
