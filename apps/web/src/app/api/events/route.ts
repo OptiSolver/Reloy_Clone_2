@@ -5,8 +5,7 @@ import {
   CreateEventInputSchema,
   createEvent,
   EventsQuerySchema,
-  computeCustomerStatus,
-  computeCustomerPresence,
+  computeCustomerState,
   EventTypeSchema,
 } from "@loop/core";
 import { pool } from "@loop/db";
@@ -33,7 +32,7 @@ function toArgentinaTimeString(date: string | Date) {
 }
 
 /**
- * Row flexible: puede venir en snake_case (DB)
+ * Row flexible: puede venir snake_case (DB)
  * o camelCase (core / mappers)
  */
 type EventRow = Record<string, unknown> & {
@@ -41,9 +40,24 @@ type EventRow = Record<string, unknown> & {
 
   occurred_at?: string | Date;
   created_at?: string | Date;
+
   occurredAt?: string | Date;
   createdAt?: string | Date;
 };
+
+function getOccurredAt(row: EventRow): string | Date | null {
+  return (row.occurred_at ?? row.occurredAt ?? null) as string | Date | null;
+}
+
+function getCreatedAt(row: EventRow): string | Date | null {
+  return (row.created_at ?? row.createdAt ?? null) as string | Date | null;
+}
+
+function getEventType(row: EventRow) {
+  if (!row.type) return null;
+  const parsed = EventTypeSchema.safeParse(row.type);
+  return parsed.success ? parsed.data : null;
+}
 
 /**
  * GET /api/events
@@ -85,41 +99,33 @@ export async function GET(req: Request) {
 
     const result = await pool.query(sql, params);
 
-    let customerStatus: string | null = null;
-    let customerPresence: "in" | "out" | null = null;
+    // Customer State Engine (si hay customer_id)
+    let customer_status: string | null = null;
+    let customer_presence: "in" | "out" | null = null;
 
-    if (parsed.customer_id && result.rows.length > 0) {
-      const last = result.rows[0] as EventRow;
+    if (parsed.customer_id) {
+      const last = (result.rows?.[0] ?? null) as EventRow | null;
 
-      const lastEventAtRaw = last.occurred_at ?? last.occurredAt;
+      const lastEventAtRaw = last ? getOccurredAt(last) : null;
       const lastEventAt = lastEventAtRaw ? new Date(lastEventAtRaw) : null;
 
-      // type viene de DB como string => lo validamos al union de EventType
-      const parsedType = EventTypeSchema.safeParse(last.type);
-      const lastEventType = parsedType.success ? parsedType.data : null;
+      const lastEventType = last ? getEventType(last) : null;
 
-      const totalEvents = result.rows.length;
+      const state = computeCustomerState({
+        totalEvents: result.rows.length,
+        lastEventAt,
+        lastEventType,
+      });
 
-      if (lastEventAt) {
-        customerStatus = computeCustomerStatus({
-          lastEventAt,
-          totalEvents,
-        });
-      }
-
-      if (lastEventAt && lastEventType) {
-        customerPresence = computeCustomerPresence({
-          lastEventAt,
-          lastEventType,
-        });
-      }
+      customer_status = state.customer_status;
+      customer_presence = state.customer_presence;
     }
 
     return NextResponse.json({
       ok: true,
       events: (result.rows as EventRow[]).map((row) => {
-        const occurred = row.occurred_at ?? row.occurredAt;
-        const created = row.created_at ?? row.createdAt;
+        const occurred = getOccurredAt(row);
+        const created = getCreatedAt(row);
 
         return {
           ...row,
@@ -127,8 +133,8 @@ export async function GET(req: Request) {
           created_at_local: created ? toArgentinaTimeString(created) : null,
         };
       }),
-      customer_status: customerStatus,
-      customer_presence: customerPresence,
+      customer_status,
+      customer_presence,
     });
   } catch (error: unknown) {
     const message =
@@ -149,8 +155,8 @@ export async function POST(req: Request) {
     const parsed = CreateEventInputSchema.parse(body);
     const inserted = (await createEvent(parsed)) as EventRow;
 
-    const occurred = inserted?.occurred_at ?? inserted?.occurredAt;
-    const created = inserted?.created_at ?? inserted?.createdAt;
+    const occurred = getOccurredAt(inserted);
+    const created = getCreatedAt(inserted);
 
     if (!occurred || !created) {
       return NextResponse.json(

@@ -1,18 +1,12 @@
 export const runtime = "nodejs";
 
 import { NextResponse } from "next/server";
-import {
-  EventsQuerySchema,
-  EventTypeSchema,
-  computeCustomerStatus,
-  computeCustomerPresence,
-  type EventType,
-} from "@loop/core";
+import { EventsQuerySchema, computeCustomerState, EventTypeSchema } from "@loop/core";
 import { pool } from "@loop/db";
 
 /**
  * Helper: convierte fechas a horario Argentina (UTC-3)
- * Devuelve string "YYYY-MM-DD HH:mm:ss"
+ * Devuelve string "YYYY-MM-DD HH:mm:ss" (ideal para JSON)
  */
 function toArgentinaTimeString(date: string | Date) {
   const d = typeof date === "string" ? new Date(date) : date;
@@ -33,7 +27,6 @@ function toArgentinaTimeString(date: string | Date) {
 
 /**
  * GET /api/customers/summary
- *
  * Query:
  * - merchant_id (req)
  * - customer_id (req)
@@ -43,6 +36,7 @@ export async function GET(req: Request) {
   try {
     const url = new URL(req.url);
 
+    // Reusamos EventsQuerySchema pero obligamos customer_id acá
     const parsedBase = EventsQuerySchema.parse({
       merchant_id: url.searchParams.get("merchant_id"),
       customer_id: url.searchParams.get("customer_id") || undefined,
@@ -74,11 +68,10 @@ export async function GET(req: Request) {
       FROM events
       WHERE ${where.join(" AND ")}
     `;
-
     const countRes = await pool.query(countSql, params);
     const totalEvents = Number(countRes.rows?.[0]?.total ?? 0);
 
-    // 2) último evento
+    // 2) last event
     const lastSql = `
       SELECT type, occurred_at
       FROM events
@@ -86,53 +79,43 @@ export async function GET(req: Request) {
       ORDER BY occurred_at DESC
       LIMIT 1
     `;
-
     const lastRes = await pool.query(lastSql, params);
     const lastRow = lastRes.rows?.[0] as
       | { type?: unknown; occurred_at?: string }
       | undefined;
 
-    const lastEventAt = lastRow?.occurred_at
-      ? new Date(lastRow.occurred_at)
-      : null;
+    const lastEventAt = lastRow?.occurred_at ? new Date(lastRow.occurred_at) : null;
 
-    // validamos el type con Zod (sin importar zod acá)
-    const parsedType = EventTypeSchema.safeParse(lastRow?.type);
-    const lastEventType: EventType | null = parsedType.success
-      ? parsedType.data
-      : null;
+    // Validamos que el type sea uno de los permitidos (EventTypeSchema)
+    const lastEventType = (() => {
+      if (!lastRow?.type) return null;
+      const parsed = EventTypeSchema.safeParse(lastRow.type);
+      return parsed.success ? parsed.data : null;
+    })();
 
-    // 3) status + presence
-    const customerStatus =
-      lastEventAt && totalEvents > 0
-        ? computeCustomerStatus({ lastEventAt, totalEvents })
-        : null;
-
-    const customerPresence =
-      lastEventAt && lastEventType
-        ? computeCustomerPresence({ lastEventAt, lastEventType })
-        : null;
+    // 3) Customer State (única fuente)
+    const state = computeCustomerState({
+      totalEvents,
+      lastEventAt,
+      lastEventType,
+    });
 
     return NextResponse.json({
       ok: true,
-
       merchant_id: parsedBase.merchant_id,
       customer_id: parsedBase.customer_id,
       branch_id: parsedBase.branch_id ?? null,
 
-      total_events: totalEvents,
+      total_events: state.total_events,
+      last_event_type: state.last_event_type,
+      last_event_at: state.last_event_at ? state.last_event_at.toISOString() : null,
+      last_event_at_local: state.last_event_at ? toArgentinaTimeString(state.last_event_at) : null,
 
-      last_event_type: lastEventType,
-      last_event_at: lastEventAt ? lastEventAt.toISOString() : null,
-      last_event_at_local: lastEventAt ? toArgentinaTimeString(lastEventAt) : null,
-
-      customer_status: customerStatus,
-      customer_presence: customerPresence,
+      customer_status: state.customer_status,
+      customer_presence: state.customer_presence,
     });
   } catch (error: unknown) {
-    const message =
-      error instanceof Error ? error.message : JSON.stringify(error);
-
+    const message = error instanceof Error ? error.message : JSON.stringify(error);
     return NextResponse.json({ ok: false, error: message }, { status: 400 });
   }
 }

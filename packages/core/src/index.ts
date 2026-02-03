@@ -12,3 +12,4 @@ export * from "./contracts/presence-query";
 export * from "./services/create-event";
 export * from "./services/computeCustomerStatus";
 export * from "./services/computeCustomerPresence";
+export * from "./services/computeCustomerState";
