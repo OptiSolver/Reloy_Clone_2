@@ -7,6 +7,7 @@ import {
   EventsQuerySchema,
   computeCustomerState,
   EventTypeSchema,
+  awardPointsFromEvent,
 } from "@loop/core";
 import { pool } from "@loop/db";
 
@@ -36,7 +37,20 @@ function toArgentinaTimeString(date: string | Date) {
  * o camelCase (core / mappers)
  */
 type EventRow = Record<string, unknown> & {
+  id?: unknown;
+
+  merchant_id?: unknown;
+  customer_id?: unknown;
+  branch_id?: unknown;
+  staff_id?: unknown;
+
+  merchantId?: unknown;
+  customerId?: unknown;
+  branchId?: unknown;
+  staffId?: unknown;
+
   type?: unknown;
+  payload?: unknown;
 
   occurred_at?: string | Date;
   created_at?: string | Date;
@@ -57,6 +71,31 @@ function getEventType(row: EventRow) {
   if (!row.type) return null;
   const parsed = EventTypeSchema.safeParse(row.type);
   return parsed.success ? parsed.data : null;
+}
+
+function getInsertedId(row: EventRow): string | null {
+  const id = row.id as string | undefined;
+  return typeof id === "string" && id.length > 0 ? id : null;
+}
+
+function getMerchantId(row: EventRow): string | null {
+  const v = (row.merchant_id ?? row.merchantId) as string | undefined;
+  return typeof v === "string" && v.length > 0 ? v : null;
+}
+
+function getCustomerId(row: EventRow): string | null {
+  const v = (row.customer_id ?? row.customerId) as string | undefined;
+  return typeof v === "string" && v.length > 0 ? v : null;
+}
+
+function getBranchId(row: EventRow): string | null {
+  const v = (row.branch_id ?? row.branchId) as string | undefined;
+  return typeof v === "string" && v.length > 0 ? v : null;
+}
+
+function getStaffId(row: EventRow): string | null {
+  const v = (row.staff_id ?? row.staffId) as string | undefined;
+  return typeof v === "string" && v.length > 0 ? v : null;
 }
 
 /**
@@ -111,10 +150,42 @@ export async function GET(req: Request) {
 
       const lastEventType = last ? getEventType(last) : null;
 
+      // 🔥 CLAVE: presencia se calcula con el último checkin/checkout,
+      // aunque el último evento general sea redeem/visit/etc.
+      const lastPresenceRes = await pool.query(
+        `
+        SELECT type, occurred_at
+        FROM events
+        WHERE merchant_id = $1
+          AND customer_id = $2
+          AND type IN ('checkin','checkout')
+        ORDER BY occurred_at DESC
+        LIMIT 1
+        `,
+        [parsed.merchant_id, parsed.customer_id]
+      );
+
+      const lastPresenceRow = (lastPresenceRes.rows?.[0] ?? null) as
+        | { type?: unknown; occurred_at?: string | Date }
+        | null;
+
+      const lastPresenceAtRaw = lastPresenceRow?.occurred_at ?? null;
+      const lastPresenceAt = lastPresenceAtRaw
+        ? new Date(lastPresenceAtRaw)
+        : null;
+
+      const lastPresenceType = lastPresenceRow?.type
+        ? EventTypeSchema.safeParse(lastPresenceRow.type).success
+          ? EventTypeSchema.parse(lastPresenceRow.type)
+          : null
+        : null;
+
       const state = computeCustomerState({
         totalEvents: result.rows.length,
         lastEventAt,
         lastEventType,
+        lastPresenceEventAt: lastPresenceAt,
+        lastPresenceEventType: lastPresenceType,
       });
 
       customer_status = state.customer_status;
@@ -146,7 +217,7 @@ export async function GET(req: Request) {
 
 /**
  * POST /api/events
- * Valida input → inserta en DB → responde evento creado
+ * Valida input → inserta en DB → (opcional) ledger → responde evento creado
  */
 export async function POST(req: Request) {
   try {
@@ -154,6 +225,26 @@ export async function POST(req: Request) {
 
     const parsed = CreateEventInputSchema.parse(body);
     const inserted = (await createEvent(parsed)) as EventRow;
+
+    // Award points from event (visit/checkin) -> points_ledger (idempotente)
+    const insertedId = getInsertedId(inserted);
+    const merchantId = getMerchantId(inserted);
+    const customerId = getCustomerId(inserted);
+    const branchId = getBranchId(inserted);
+    const staffId = getStaffId(inserted);
+    const eventType = getEventType(inserted);
+
+    if (insertedId && merchantId && customerId && eventType) {
+      await awardPointsFromEvent({
+        eventId: insertedId,
+        merchantId,
+        customerId,
+        branchId,
+        staffId,
+        type: eventType,
+        payload: (inserted.payload ?? null) as unknown,
+      });
+    }
 
     const occurred = getOccurredAt(inserted);
     const created = getCreatedAt(inserted);

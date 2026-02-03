@@ -6,12 +6,20 @@ export type ComputeCustomerStateInput = {
   totalEvents: number;
   lastEventAt: Date | null;
   lastEventType: EventType | null;
+
+  /**
+   * Opcional: último evento relevante SOLO para presencia
+   * (ej: checkin/checkout) para que redeem/visit no rompan presence.
+   */
+  lastPresenceEventAt?: Date | null;
+  lastPresenceEventType?: EventType | null;
 };
 
 export type ComputeCustomerStateOutput = {
   total_events: number;
   last_event_type: EventType | null;
   last_event_at: Date | null;
+
   customer_status: string | null;
   customer_presence: "in" | "out" | null;
 };
@@ -23,16 +31,30 @@ export type ComputeCustomerStateOutput = {
 export function computeCustomerState(
   input: ComputeCustomerStateInput
 ): ComputeCustomerStateOutput {
-  const { totalEvents, lastEventAt, lastEventType } = input;
+  const {
+    totalEvents,
+    lastEventAt,
+    lastEventType,
+    lastPresenceEventAt,
+    lastPresenceEventType,
+  } = input;
 
+  // Status: usa actividad general (cualquier evento)
   const customerStatus =
     lastEventAt && totalEvents > 0
       ? computeCustomerStatus({ lastEventAt, totalEvents })
       : null;
 
+  // Presence: usa checkin/checkout si existe, sino cae al último evento
+  const effectivePresenceAt = lastPresenceEventAt ?? lastEventAt;
+  const effectivePresenceType = lastPresenceEventType ?? lastEventType;
+
   const customerPresence =
-    lastEventAt && lastEventType
-      ? computeCustomerPresence({ lastEventAt, lastEventType })
+    effectivePresenceAt && effectivePresenceType
+      ? computeCustomerPresence({
+          lastEventAt: effectivePresenceAt,
+          lastEventType: effectivePresenceType,
+        })
       : null;
 
   return {

@@ -193,6 +193,7 @@ export const events = pgTable(
   })
 );
 
+
 /**
  * MERCHANT_SETTINGS
  * Parametrización por comercio/rubro.
