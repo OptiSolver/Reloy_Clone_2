@@ -1,71 +1,38 @@
 import { z } from "zod";
-import { EventTypeSchema, PayloadByType } from "./event-types";
+
+export const EventTypeSchema = z.enum(["visit", "checkin", "checkout", "redeem"]);
+export type EventType = z.infer<typeof EventTypeSchema>;
 
 /**
- * Input de creación de evento
- * Acepta snake_case o camelCase y normaliza a snake_case.
+ * CreateEventInput
+ * - Acepta snake_case y camelCase
+ * - Normaliza a snake_case para el core
  */
 export const CreateEventInputSchema = z
   .object({
-    // snake_case
-    merchant_id: z.string().uuid().optional(),
-    branch_id: z.string().uuid().optional(),
-    customer_id: z.string().uuid().optional(),
-
-    // camelCase
-    merchantId: z.string().uuid().optional(),
-    branchId: z.string().uuid().optional(),
-    customerId: z.string().uuid().optional(),
-
     type: EventTypeSchema,
-    payload: z.unknown(),
+
+    // snake_case (DB / interno)
+    merchant_id: z.string().uuid().optional(),
+    branch_id: z.string().uuid().nullable().optional(),
+    customer_id: z.string().uuid().optional(),
+    staff_id: z.string().uuid().nullable().optional(),
+
+    // camelCase (UI / cliente)
+    merchantId: z.string().uuid().optional(),
+    branchId: z.string().uuid().nullable().optional(),
+    customerId: z.string().uuid().optional(),
+    staffId: z.string().uuid().nullable().optional(),
+
+    payload: z.unknown().optional(),
   })
-  .superRefine((data, ctx) => {
-    const merchant_id = data.merchant_id ?? data.merchantId;
-    const branch_id = data.branch_id ?? data.branchId;
-    const customer_id = data.customer_id ?? data.customerId;
-
-    if (!merchant_id) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "merchant_id es requerido",
-        path: ["merchant_id"],
-      });
-    }
-
-    if (!branch_id) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "branch_id es requerido",
-        path: ["branch_id"],
-      });
-    }
-
-    if (!customer_id) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "customer_id es requerido",
-        path: ["customer_id"],
-      });
-    }
-
-    const payloadSchema = PayloadByType[data.type];
-    const result = payloadSchema.safeParse(data.payload);
-
-    if (!result.success) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: `Payload inválido para el tipo de evento: ${data.type}`,
-        path: ["payload"],
-      });
-    }
-  })
-  .transform((data) => ({
-    merchant_id: data.merchant_id ?? data.merchantId!,
-    branch_id: data.branch_id ?? data.branchId!,
-    customer_id: data.customer_id ?? data.customerId!,
-    type: data.type,
-    payload: data.payload,
+  .transform((v) => ({
+    type: v.type,
+    merchant_id: v.merchant_id ?? v.merchantId!,
+    branch_id: v.branch_id ?? v.branchId ?? null,
+    customer_id: v.customer_id ?? v.customerId!,
+    staff_id: v.staff_id ?? v.staffId ?? null,
+    payload: v.payload ?? null,
   }));
 
 export type CreateEventInput = z.infer<typeof CreateEventInputSchema>;

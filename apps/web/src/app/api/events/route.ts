@@ -13,7 +13,7 @@ import { pool } from "@loop/db";
 
 /**
  * Helper: convierte fechas a horario Argentina (UTC-3)
- * Devuelve string "YYYY-MM-DD HH:mm:ss" (ideal para JSON)
+ * Devuelve string "YYYY-MM-DD HH:mm:ss"
  */
 function toArgentinaTimeString(date: string | Date) {
   const d = typeof date === "string" ? new Date(date) : date;
@@ -32,9 +32,63 @@ function toArgentinaTimeString(date: string | Date) {
     .replace("T", " ");
 }
 
+function isUuid(v: unknown): v is string {
+  return (
+    typeof v === "string" &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+      v
+    )
+  );
+}
+
 /**
- * Row flexible: puede venir snake_case (DB)
- * o camelCase (core / mappers)
+ * DEV AUTH (por ahora):
+ * - usamos header x-auth-user-id
+ */
+function getDevAuthUserId(req: Request): string | null {
+  const h =
+    req.headers.get("x-auth-user-id") ||
+    req.headers.get("X-Auth-User-Id") ||
+    null;
+
+  if (!h) return null;
+  return isUuid(h) ? h : null;
+}
+
+type StaffContext = {
+  staff_id: string;
+  branch_id: string;
+  merchant_id: string;
+};
+
+async function getStaffContextByAuthUserId(
+  auth_user_id: string
+): Promise<StaffContext | null> {
+  const res = await pool.query<{
+    staff_id: string;
+    branch_id: string;
+    merchant_id: string;
+  }>(
+    `
+    select
+      s.id as staff_id,
+      s.branch_id,
+      b.merchant_id
+    from staff s
+    join branches b on b.id = s.branch_id
+    where s.auth_user_id = $1
+      and s.is_active = true
+    order by s.created_at desc
+    limit 1
+    `,
+    [auth_user_id]
+  );
+
+  return res.rows?.[0] ?? null;
+}
+
+/**
+ * Row flexible: puede venir snake_case (DB) o camelCase (core / mappers)
  */
 type EventRow = Record<string, unknown> & {
   id?: unknown;
@@ -150,8 +204,7 @@ export async function GET(req: Request) {
 
       const lastEventType = last ? getEventType(last) : null;
 
-      // 🔥 CLAVE: presencia se calcula con el último checkin/checkout,
-      // aunque el último evento general sea redeem/visit/etc.
+      // presencia según último checkin/checkout
       const lastPresenceRes = await pool.query(
         `
         SELECT type, occurred_at
@@ -217,16 +270,35 @@ export async function GET(req: Request) {
 
 /**
  * POST /api/events
- * Valida input → inserta en DB → (opcional) ledger → responde evento creado
+ * Ahora: si viene x-auth-user-id, autocompleta merchant_id/branch_id/staff_id
+ * cuando no estén presentes en el body.
  */
 export async function POST(req: Request) {
   try {
-    const body = await req.json();
+    const body = (await req.json()) as Record<string, unknown>;
 
+    // 1) Autocomplete desde Session DEV (solo si faltan campos)
+    const auth_user_id = getDevAuthUserId(req);
+    if (auth_user_id) {
+      const staffCtx = await getStaffContextByAuthUserId(auth_user_id);
+
+      if (staffCtx) {
+        // Soportamos snake y camel (si el user manda cualquiera)
+        if (!body.merchant_id && !body.merchantId) body.merchant_id = staffCtx.merchant_id;
+        if (!body.branch_id && !body.branchId) body.branch_id = staffCtx.branch_id;
+
+        // staff_id: solo lo completamos si no viene
+        if (!body.staff_id && !body.staffId) body.staff_id = staffCtx.staff_id;
+      }
+    }
+
+    // 2) Validar input final
     const parsed = CreateEventInputSchema.parse(body);
+
+    // 3) Insertar evento
     const inserted = (await createEvent(parsed)) as EventRow;
 
-    // Award points from event (visit/checkin) -> points_ledger (idempotente)
+    // 4) Award points (idempotente)
     const insertedId = getInsertedId(inserted);
     const merchantId = getMerchantId(inserted);
     const customerId = getCustomerId(inserted);

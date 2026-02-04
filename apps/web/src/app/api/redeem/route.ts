@@ -35,25 +35,92 @@ type EventRow = {
   created_at: string;
 };
 
+type StaffCtxRow = {
+  staff_id: string;
+  branch_id: string;
+  merchant_id: string;
+  is_active: boolean;
+};
+
+function getAuthUserId(req: Request): string | null {
+  return req.headers.get("x-auth-user-id")?.trim() || null;
+}
+
+async function resolveStaffContext(auth_user_id: string): Promise<StaffCtxRow | null> {
+  const res = await pool.query<StaffCtxRow>(
+    `
+    select
+      s.id as staff_id,
+      s.branch_id as branch_id,
+      b.merchant_id as merchant_id,
+      s.is_active as is_active
+    from staff s
+    join branches b on b.id = s.branch_id
+    where s.auth_user_id = $1
+    order by s.created_at desc
+    limit 1
+    `,
+    [auth_user_id]
+  );
+
+  return res.rows[0] ?? null;
+}
+
 /**
  * POST /api/redeem
- * body: { merchantId, customerId, rewardId, branchId?, staffId? }
  *
- * Hace:
- * 1) valida reward + costo
- * 2) valida already_redeemed (antes del balance) -> mejor UX
- * 3) valida balance (points_ledger)
- * 4) TX:
- *    4.1) inserta reward_redemptions (anti-duplicado por índice parcial) -> already_redeemed
- *    4.2) inserta event 'redeem' (payload: reward_id + reward_redemption_id)
- *    4.3) inserta points_ledger delta negativo idempotente por source_event_id
+ * Body soportado (legacy / actual):
+ * - camelCase: { merchantId, customerId, rewardId, branchId?, staffId? }
+ *
+ * ✅ Nuevo:
+ * - Si viene header "x-auth-user-id", y NO mandás staffId/branchId/merchantId,
+ *   se resuelven desde DB (staff → branch → merchant).
  */
 export async function POST(req: Request) {
   try {
     const body = await req.json();
     const parsed = RedeemInputSchema.parse(body);
 
-    const { merchantId, customerId, rewardId, branchId, staffId } = parsed;
+    // Los campos pueden venir; si faltan, intentamos derivarlos desde x-auth-user-id
+    const { customerId, rewardId } = parsed;
+
+let { merchantId, branchId, staffId } = parsed;
+
+    // =========================
+    // Identidad real (staff)
+    // =========================
+    const auth_user_id = getAuthUserId(req);
+
+    if (auth_user_id && (!merchantId || !branchId || !staffId)) {
+      const ctx = await resolveStaffContext(auth_user_id);
+
+      if (!ctx) {
+        return NextResponse.json(
+          { ok: false, error: "staff_context_not_found" },
+          { status: 401 }
+        );
+      }
+
+      if (!ctx.is_active) {
+        return NextResponse.json(
+          { ok: false, error: "staff_inactive" },
+          { status: 403 }
+        );
+      }
+
+      // Completa lo que falte
+      merchantId = merchantId || ctx.merchant_id;
+      branchId = branchId || ctx.branch_id;
+      staffId = staffId || ctx.staff_id;
+    }
+
+    // Si aún falta merchantId (sin header y sin body)
+    if (!merchantId) {
+      return NextResponse.json(
+        { ok: false, error: "merchantId_required" },
+        { status: 400 }
+      );
+    }
 
     // 1) reward
     const rewardRes = await pool.query<RewardRow>(
@@ -130,10 +197,6 @@ export async function POST(req: Request) {
       await client.query("BEGIN");
 
       // 4.1) reward_redemptions (anti-duplicado con índice parcial)
-      // Índice esperado:
-      // CREATE UNIQUE INDEX reward_redemptions_one_active_per_reward
-      // ON reward_redemptions (merchant_id, customer_id, reward_id)
-      // WHERE status = 'approved';
       const redemptionRes = await client.query<RedemptionRow>(
         `
         INSERT INTO reward_redemptions (
@@ -171,7 +234,7 @@ export async function POST(req: Request) {
         );
       }
 
-      // 4.2) event redeem (guardamos reward_id + reward_redemption_id)
+      // 4.2) event redeem
       const eventPayload = {
         reward_id: rewardId,
         reward_redemption_id: redemption.id,
@@ -203,10 +266,6 @@ export async function POST(req: Request) {
       const eventId = event.id;
 
       // 4.3) ledger negativo (idempotente por source_event_id)
-      // Índice esperado (parcial):
-      // CREATE UNIQUE INDEX points_ledger_source_event_id_uq
-      // ON points_ledger (source_event_id)
-      // WHERE source_event_id IS NOT NULL;
       await client.query(
         `
         INSERT INTO points_ledger (

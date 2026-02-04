@@ -2,18 +2,13 @@ import { db, events } from "@loop/db";
 import { CreateEventInput } from "../contracts/event";
 
 export async function createEvent(input: CreateEventInput) {
-  const {
-    merchant_id,
-    branch_id,
-    customer_id,
-    type,
-    payload,
-  } = input;
+  const { merchant_id, branch_id, customer_id, staff_id, type, payload } = input;
 
   console.log("[core:createEvent] inserting event", {
     merchant_id,
     branch_id,
     customer_id,
+    staff_id,
     type,
     payload,
   });
@@ -24,6 +19,7 @@ export async function createEvent(input: CreateEventInput) {
       merchantId: merchant_id,
       branchId: branch_id,
       customerId: customer_id,
+      staffId: staff_id ?? null,
       type,
       payload,
     })
