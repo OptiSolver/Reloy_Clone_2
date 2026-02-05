@@ -2,7 +2,6 @@ export const runtime = "nodejs";
 
 import { NextResponse } from "next/server";
 import { pool } from "@loop/db";
-import { RedeemInputSchema } from "@loop/core";
 
 type RewardRow = {
   id: string;
@@ -42,11 +41,37 @@ type StaffCtxRow = {
   is_active: boolean;
 };
 
-function getAuthUserId(req: Request): string | null {
-  return req.headers.get("x-auth-user-id")?.trim() || null;
+function isUuid(v: unknown): v is string {
+  return (
+    typeof v === "string" &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+      v
+    )
+  );
 }
 
-async function resolveStaffContext(auth_user_id: string): Promise<StaffCtxRow | null> {
+function getAuthUserId(req: Request): string | null {
+  const h =
+    req.headers.get("x-auth-user-id") ||
+    req.headers.get("X-Auth-User-Id") ||
+    null;
+  if (!h) return null;
+  return isUuid(h) ? h : null;
+}
+
+function asRecord(v: unknown): Record<string, unknown> | null {
+  if (!v || typeof v !== "object") return null;
+  return v as Record<string, unknown>;
+}
+
+function pickString(obj: Record<string, unknown>, key: string): string | null {
+  const v = obj[key];
+  return typeof v === "string" && v.trim().length > 0 ? v.trim() : null;
+}
+
+async function resolveStaffContext(
+  auth_user_id: string
+): Promise<StaffCtxRow | null> {
   const res = await pool.query<StaffCtxRow>(
     `
     select
@@ -69,25 +94,95 @@ async function resolveStaffContext(auth_user_id: string): Promise<StaffCtxRow | 
 /**
  * POST /api/redeem
  *
- * Body soportado (legacy / actual):
- * - camelCase: { merchantId, customerId, rewardId, branchId?, staffId? }
+ * Body soportado:
+ * - Full (camelCase): { merchantId, customerId, rewardId, branchId?, staffId?, demoRunId? }
+ * - Full (snake_case): { merchant_id, customer_id, reward_id, branch_id?, staff_id?, demo_run_id? }
  *
- * ✅ Nuevo:
- * - Si viene header "x-auth-user-id", y NO mandás staffId/branchId/merchantId,
- *   se resuelven desde DB (staff → branch → merchant).
+ * ✅ Nuevo (HC.2):
+ * - Si viene header "x-auth-user-id", podés mandar SOLO:
+ *   { customerId, rewardId } (o snake_case)
+ *   y resolvemos merchant/branch/staff desde DB (staff → branch → merchant).
+ *
+ * ✅ Nuevo (HC3.5):
+ * - Si mandás demoRunId/demo_run_id, lo guardamos en events.payload y points_ledger.meta
+ *   para poder resetear todo por demo_run_id.
  */
 export async function POST(req: Request) {
   try {
-    const body = await req.json();
-    const parsed = RedeemInputSchema.parse(body);
+    const bodyUnknown = (await req.json()) as unknown;
+    const body = asRecord(bodyUnknown);
 
-    // Los campos pueden venir; si faltan, intentamos derivarlos desde x-auth-user-id
-    const { customerId, rewardId } = parsed;
+    if (!body) {
+      return NextResponse.json(
+        { ok: false, error: "invalid_body" },
+        { status: 400 }
+      );
+    }
 
-let { merchantId, branchId, staffId } = parsed;
+    // Accept camelCase o snake_case
+    const customerId =
+      pickString(body, "customerId") ?? pickString(body, "customer_id");
+    const rewardId =
+      pickString(body, "rewardId") ?? pickString(body, "reward_id");
+    let merchantId =
+      pickString(body, "merchantId") ?? pickString(body, "merchant_id");
+    let branchId =
+      pickString(body, "branchId") ?? pickString(body, "branch_id");
+    let staffId = pickString(body, "staffId") ?? pickString(body, "staff_id");
+
+    // ✅ demo_run_id (opcional)
+    const demoRunId =
+      pickString(body, "demoRunId") ?? pickString(body, "demo_run_id");
+
+    if (!isUuid(customerId)) {
+      return NextResponse.json(
+        { ok: false, error: "customerId_required_or_invalid" },
+        { status: 400 }
+      );
+    }
+
+    if (!isUuid(rewardId)) {
+      return NextResponse.json(
+        { ok: false, error: "rewardId_required_or_invalid" },
+        { status: 400 }
+      );
+    }
+
+    if (merchantId !== null && merchantId !== undefined && merchantId !== "") {
+      if (!isUuid(merchantId)) {
+        return NextResponse.json(
+          { ok: false, error: "merchantId_invalid" },
+          { status: 400 }
+        );
+      }
+    } else {
+      merchantId = null;
+    }
+
+    if (branchId !== null && branchId !== undefined && branchId !== "") {
+      if (!isUuid(branchId)) {
+        return NextResponse.json(
+          { ok: false, error: "branchId_invalid" },
+          { status: 400 }
+        );
+      }
+    } else {
+      branchId = null;
+    }
+
+    if (staffId !== null && staffId !== undefined && staffId !== "") {
+      if (!isUuid(staffId)) {
+        return NextResponse.json(
+          { ok: false, error: "staffId_invalid" },
+          { status: 400 }
+        );
+      }
+    } else {
+      staffId = null;
+    }
 
     // =========================
-    // Identidad real (staff)
+    // Identidad real (staff) desde header
     // =========================
     const auth_user_id = getAuthUserId(req);
 
@@ -108,13 +203,11 @@ let { merchantId, branchId, staffId } = parsed;
         );
       }
 
-      // Completa lo que falte
-      merchantId = merchantId || ctx.merchant_id;
-      branchId = branchId || ctx.branch_id;
-      staffId = staffId || ctx.staff_id;
+      merchantId = merchantId ?? ctx.merchant_id;
+      branchId = branchId ?? ctx.branch_id;
+      staffId = staffId ?? ctx.staff_id;
     }
 
-    // Si aún falta merchantId (sin header y sin body)
     if (!merchantId) {
       return NextResponse.json(
         { ok: false, error: "merchantId_required" },
@@ -182,7 +275,7 @@ let { merchantId, branchId, staffId } = parsed;
       [merchantId, customerId]
     );
 
-    const balance = Number(balRes.rows?.[0]?.balance ?? 0);
+    const balance = Number(balRes.rows[0]?.balance ?? 0);
 
     if (balance < required) {
       return NextResponse.json(
@@ -234,11 +327,15 @@ let { merchantId, branchId, staffId } = parsed;
         );
       }
 
-      // 4.2) event redeem
-      const eventPayload = {
+      // 4.2) event redeem (incluye demo_run_id si vino)
+      const eventPayload: Record<string, unknown> = {
         reward_id: rewardId,
         reward_redemption_id: redemption.id,
       };
+
+      if (demoRunId) {
+        eventPayload.demo_run_id = demoRunId;
+      }
 
       const eventRes = await client.query<EventRow>(
         `
@@ -309,7 +406,6 @@ let { merchantId, branchId, staffId } = parsed;
   } catch (error: unknown) {
     const message =
       error instanceof Error ? error.message : JSON.stringify(error);
-
     return NextResponse.json({ ok: false, error: message }, { status: 400 });
   }
 }
