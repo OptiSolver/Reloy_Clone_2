@@ -1,7 +1,7 @@
 export const runtime = "nodejs";
 
 import { NextResponse } from "next/server";
-import { PresenceQuerySchema, computeCustomerPresence } from "@loop/core";
+import { PresenceQuerySchema, computeCustomerPresence, EventTypeSchema } from "@loop/core";
 import { pool } from "@loop/db";
 
 /**
@@ -44,8 +44,16 @@ export async function GET(req: Request) {
 
     const last = result.rows[0] as { type: string; occurred_at: string | Date };
 
+    const parsedType = EventTypeSchema.safeParse(last.type);
+    if (!parsedType.success) {
+      return NextResponse.json(
+        { ok: false, error: "invalid_event_type", last_type: last.type },
+        { status: 400 }
+      );
+    }
+
     const presence = computeCustomerPresence({
-      lastEventType: last.type,
+      lastEventType: parsedType.data,
       lastEventAt: new Date(last.occurred_at),
     });
 

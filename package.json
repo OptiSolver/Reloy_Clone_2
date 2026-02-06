@@ -25,5 +25,11 @@
   },
   "homepage": "https://github.com/sercai/loop#readme",
   "private": true,
-  "packageManager": "pnpm@10.28.2"
+  "packageManager": "pnpm@10.28.2",
+  "dependencies": {
+    "bcryptjs": "^3.0.3"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6"
+  }
 }

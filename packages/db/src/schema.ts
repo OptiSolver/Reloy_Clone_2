@@ -16,8 +16,15 @@ import {
  */
 export const owners = pgTable("owners", {
   id: uuid("id").defaultRandom().primaryKey(),
-  name: text("name").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
+
+  authUserId: uuid("auth_user_id").unique(),
+
+  firstName: text("first_name"),
+  lastName: text("last_name"),
+
+  accountType: text("account_type").default("owner"),
+  status: text("status").default("active"),
 });
 
 /**
