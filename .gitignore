@@ -18,3 +18,16 @@ coverage
 
 # turbo / monorepo
 .turbo
+
+# --- Local / IDE ---
+.vscode/
+
+# --- Vendor / experiments ---
+apps/web/_vendor/
+apps/web/src/app/_bak/
+
+# --- Landing separada (opción A) ---
+apps/landing/
+
+# --- Generated / copied assets from experiments ---
+apps/web/public/images/
