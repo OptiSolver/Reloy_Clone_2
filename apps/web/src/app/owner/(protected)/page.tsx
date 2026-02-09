@@ -1,14 +1,32 @@
 export const runtime = "nodejs";
 
-import { revalidatePath } from "next/cache";
 import Link from "next/link";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
-/* =========================
-   TIPOS
-========================= */
+import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Separator } from "@/components/ui/separator";
 
+/* =========================
+   Cookies (compat sync/async)
+========================= */
+async function getCookieStore() {
+  const c = cookies() as unknown;
+  return (c instanceof Promise ? await c : c) as {
+    get(name: string): { value: string } | undefined;
+  };
+}
+
+async function getDevAuthUserId(): Promise<string | null> {
+  const c = await getCookieStore();
+  return c.get("dev_auth_user_id")?.value ?? null;
+}
+
+/* =========================
+   Types
+========================= */
 type Reward = {
   id: string;
   merchant_id: string;
@@ -39,25 +57,8 @@ type OnboardingStatus = {
 };
 
 /* =========================
-   COOKIES (compat sync/async)
+   Fetch helpers
 ========================= */
-
-async function getCookieStore() {
-  const c = cookies() as unknown;
-  return (c instanceof Promise ? await c : c) as {
-    get(name: string): { value: string } | undefined;
-  };
-}
-
-async function getDevAuthUserId(): Promise<string | null> {
-  const c = await getCookieStore();
-  return c.get("dev_auth_user_id")?.value ?? null;
-}
-
-/* =========================
-   FETCH helpers
-========================= */
-
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000";
 
 async function apiFetchJson<T>(
@@ -80,7 +81,10 @@ async function apiFetchJson<T>(
 }
 
 async function fetchOnboardingStatus(authUserId: string): Promise<OnboardingStatus> {
-  const r = await apiFetchJson<OnboardingStatus>("/api/owner/onboarding/status", authUserId);
+  const r = await apiFetchJson<OnboardingStatus>(
+    "/api/owner/onboarding/status",
+    authUserId
+  );
   if (!r.ok) return { ok: false, error: r.error };
   return r.data;
 }
@@ -90,319 +94,399 @@ async function fetchOwnerRewards(authUserId: string) {
 }
 
 /* =========================
-   UI helpers (server component)
+   UI atoms
 ========================= */
-
-function PageShell(props: { title: string; subtitle?: string; children: React.ReactNode }) {
+function KpiCard(props: {
+  label: string;
+  value: string;
+  hint?: string;
+  badge?: { text: string; variant?: "default" | "secondary" | "destructive" };
+}) {
   return (
-    <div style={{ minHeight: "100vh", padding: 24, background: "white" }}>
-      <div style={{ maxWidth: 980, margin: "0 auto", display: "grid", gap: 18 }}>
-        <header style={{ display: "grid", gap: 6 }}>
-          <div style={{ fontSize: 12, opacity: 0.7 }}>LOOP • Owner</div>
-          <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12 }}>
-            <h1 style={{ margin: 0, fontSize: 22, fontWeight: 800 }}>{props.title}</h1>
-            <Link href="/" style={{ fontSize: 13, opacity: 0.8 }}>
-              Salir / Cambiar rol
-            </Link>
+    <Card className="p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="space-y-1">
+          <div className="text-xs text-muted-foreground">{props.label}</div>
+          <div className="text-2xl font-semibold tracking-tight">
+            {props.value}
           </div>
-          {props.subtitle ? <div style={{ fontSize: 13, opacity: 0.75 }}>{props.subtitle}</div> : null}
-        </header>
-
-        {props.children}
-      </div>
-    </div>
-  );
-}
-
-function Panel(props: { title: string; subtitle?: string; children: React.ReactNode; right?: React.ReactNode }) {
-  return (
-    <section style={{ border: "1px solid #e5e7eb", borderRadius: 14, overflow: "hidden" }}>
-      <div style={{ padding: 14, borderBottom: "1px solid #e5e7eb", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
-        <div>
-          <div style={{ fontWeight: 800 }}>{props.title}</div>
-          {props.subtitle ? <div style={{ marginTop: 4, fontSize: 13, opacity: 0.7 }}>{props.subtitle}</div> : null}
+          {props.hint ? (
+            <div className="text-xs text-muted-foreground">{props.hint}</div>
+          ) : null}
         </div>
-        {props.right ? <div>{props.right}</div> : null}
+        {props.badge ? (
+          <Badge variant={props.badge.variant ?? "secondary"} className="text-[11px]">
+            {props.badge.text}
+          </Badge>
+        ) : null}
       </div>
-      <div style={{ padding: 14 }}>{props.children}</div>
-    </section>
+    </Card>
   );
 }
 
-function StatPill(props: { label: string; value: string }) {
+function SectionHeader(props: {
+  title: string;
+  subtitle?: string;
+  right?: React.ReactNode;
+}) {
   return (
-    <div
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        gap: 8,
-        padding: "8px 10px",
-        borderRadius: 999,
-        border: "1px solid #e5e7eb",
-        fontSize: 13,
-      }}
-    >
-      <span style={{ opacity: 0.7 }}>{props.label}</span>
-      <strong>{props.value}</strong>
+    <div className="flex items-start justify-between gap-4">
+      <div className="space-y-1">
+        <div className="text-base font-semibold">{props.title}</div>
+        {props.subtitle ? (
+          <div className="text-sm text-muted-foreground">{props.subtitle}</div>
+        ) : null}
+      </div>
+      {props.right ? <div className="shrink-0">{props.right}</div> : null}
     </div>
   );
 }
-
-function Input(props: React.InputHTMLAttributes<HTMLInputElement>) {
-  return (
-    <input
-      {...props}
-      style={{
-        width: "100%",
-        padding: "10px 12px",
-        border: "1px solid #e5e7eb",
-        borderRadius: 12,
-        outline: "none",
-        fontSize: 14,
-        ...((props.style as React.CSSProperties) ?? {}),
-      }}
-    />
-  );
-}
-
-function Button(props: React.ButtonHTMLAttributes<HTMLButtonElement>) {
-  return (
-    <button
-      {...props}
-      style={{
-        width: "100%",
-        padding: "10px 12px",
-        border: "1px solid #e5e7eb",
-        borderRadius: 12,
-        fontWeight: 700,
-        cursor: "pointer",
-        background: "rgba(0,0,0,0.04)",
-        ...((props.style as React.CSSProperties) ?? {}),
-      }}
-    />
-  );
-}
-
-/* =========================
-   SERVER ACTION
-========================= */
-
-async function createReward(formData: FormData) {
-  "use server";
-
-  const title = String(formData.get("title") ?? "").trim();
-  const descriptionRaw = String(formData.get("description") ?? "").trim();
-  const description = descriptionRaw.length ? descriptionRaw : null;
-
-  const pointsCostRaw = String(formData.get("points_cost") ?? "").trim();
-  const points_cost = Number(pointsCostRaw);
-
-  if (!title) return;
-  if (!Number.isFinite(points_cost) || points_cost <= 0) return;
-
-  const authUserId = await getDevAuthUserId();
-  if (!authUserId) redirect("/owner/login");
-
-  await fetch(`${BASE_URL}/api/owner/rewards`, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "x-auth-user-id": authUserId,
-    },
-    body: JSON.stringify({ title, description, points_cost }),
-    cache: "no-store",
-  });
-
-  revalidatePath("/owner");
-}
-
-/* =========================
-   PAGE
-========================= */
 
 export default async function OwnerHomePage() {
   const authUserId = await getDevAuthUserId();
-
-  // 1) login gate
   if (!authUserId) redirect("/owner/login");
 
-  // 2) onboarding gate
-  const status = await fetchOnboardingStatus(authUserId);
-  if (!status.ok || !status.onboarding?.is_complete) redirect("/owner/onboarding");
+  const [onboarding, rewardsRes] = await Promise.all([
+    fetchOnboardingStatus(authUserId),
+    fetchOwnerRewards(authUserId),
+  ]);
 
-  // 3) data
-  const rewardsResp = await fetchOwnerRewards(authUserId);
-  if (!rewardsResp.ok) {
-    return (
-      <PageShell title="Home" subtitle="No pudimos cargar tu información.">
-        <Panel title="Error" subtitle="Falló el fetch de /api/owner/rewards">
-          <div style={{ fontSize: 13 }}>
-            Código: <code>{rewardsResp.error}</code>
-          </div>
-          <div style={{ marginTop: 12, display: "flex", gap: 12, flexWrap: "wrap" }}>
-            <Link href="/owner/onboarding">Ir a onboarding</Link>
-            <Link href="/owner/login">Volver a login</Link>
-          </div>
-        </Panel>
-      </PageShell>
-    );
-  }
+  const rewards =
+    rewardsRes.ok && rewardsRes.data.ok ? rewardsRes.data.rewards ?? [] : [];
 
-  const payload = rewardsResp.data;
-  if (!payload.ok) {
-    return (
-      <PageShell title="Home" subtitle="La API respondió con error.">
-        <Panel title="Error" subtitle="Respuesta inválida de /api/owner/rewards">
-          <div style={{ fontSize: 13 }}>
-            Error: <code>{payload.error ?? "unknown_error"}</code>
-          </div>
-        </Panel>
-      </PageShell>
-    );
-  }
+  const rewardsCount =
+    rewardsRes.ok && rewardsRes.data.ok ? rewardsRes.data.count ?? rewards.length : rewards.length;
 
-  const ownerName = payload.owner?.name ?? "Owner";
-  const merchant = payload.merchants?.[0] ?? null;
-  const merchantName = merchant?.name ?? "—";
-  const rewards = payload.rewards ?? [];
+  const onboardingStep = onboarding.ok ? onboarding.onboarding?.step ?? 0 : 0;
+  const onboardingDone = onboarding.ok ? Boolean(onboarding.onboarding?.is_complete) : false;
+
+  const topRewards = [...rewards]
+    .sort((a, b) => Number(a.points_cost) - Number(b.points_cost))
+    .slice(0, 5);
+
+  const hasAnyRewards = rewardsCount > 0;
+
+  // Estado “cero datos” (muy simple por ahora)
+  const isFirstDayLike = !hasAnyRewards || !onboardingDone;
 
   return (
-    <PageShell title="Home" subtitle={`${ownerName} • ${merchantName}`}>
-      {/* STATUS BAR */}
-      <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-        <StatPill label="Onboarding" value="Completo" />
-        <StatPill label="Rewards" value={String(rewards.length)} />
-        <StatPill label="Merchant" value={merchant ? "OK" : "—"} />
-      </div>
+    <div className="space-y-8">
+      {/* Header */}
+      <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+        <div className="space-y-1">
+          <div className="text-sm text-muted-foreground">Home (Dashboard)</div>
+          <h1 className="text-2xl font-semibold tracking-tight">
+            Estado del negocio
+          </h1>
+          <div className="text-sm text-muted-foreground">
+            Un resumen rápido. Lo importante arriba. Lo accionable al centro.
+          </div>
+        </div>
 
-      {/* QUICK ACTIONS */}
-      <Panel
-        title="Acciones rápidas"
-        subtitle="Atajos para operar el día 1."
-        right={<Link href="/owner/onboarding">Editar onboarding</Link>}
-      >
-        <div style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}>
-          <Link
-            href="/owner/rewards"
-            style={{
-              padding: 12,
-              borderRadius: 12,
-              border: "1px solid #e5e7eb",
-              textDecoration: "none",
-              color: "inherit",
-            }}
-          >
-            <div style={{ fontWeight: 800 }}>Rewards</div>
-            <div style={{ marginTop: 4, fontSize: 13, opacity: 0.75 }}>Ver y administrar recompensas.</div>
-          </Link>
-
-          <Link
-            href="/owner/dashboard"
-            style={{
-              padding: 12,
-              borderRadius: 12,
-              border: "1px solid #e5e7eb",
-              textDecoration: "none",
-              color: "inherit",
-            }}
-          >
-            <div style={{ fontWeight: 800 }}>Dashboard</div>
-            <div style={{ marginTop: 4, fontSize: 13, opacity: 0.75 }}>Métricas y estado general.</div>
-          </Link>
-
-          <Link
-            href="/owner/onboarding"
-            style={{
-              padding: 12,
-              borderRadius: 12,
-              border: "1px solid #e5e7eb",
-              textDecoration: "none",
-              color: "inherit",
-            }}
-          >
-            <div style={{ fontWeight: 800 }}>Config inicial</div>
-            <div style={{ marginTop: 4, fontSize: 13, opacity: 0.75 }}>Nombre, comercio, rubro.</div>
+        <div className="flex items-center gap-2">
+          {isFirstDayLike ? (
+            <Badge variant="secondary">Modo onboarding</Badge>
+          ) : (
+            <Badge variant="secondary">Operando</Badge>
+          )}
+          <Link href="/owner/onboarding">
+            <Button variant="outline" size="sm">
+              Checklist
+            </Button>
           </Link>
         </div>
-      </Panel>
+      </div>
 
-      {/* CREATE REWARD */}
-      <Panel title="Crear reward" subtitle="Lo mínimo para empezar a operar recompensas desde el día 1.">
-        <form action={createReward} style={{ display: "grid", gap: 10, maxWidth: 560 }}>
-          <div style={{ display: "grid", gap: 8 }}>
-            <div style={{ fontSize: 12, opacity: 0.7 }}>Título</div>
-            <Input name="title" placeholder="Ej: Lavado Premium -15%" required />
+      {/* KPIs */}
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-6">
+        <KpiCard
+          label="Clientes activos"
+          value="—"
+          hint="en el período"
+          badge={{ text: "Próx.", variant: "secondary" }}
+        />
+        <KpiCard
+          label="En riesgo"
+          value="—"
+          hint="a recuperar"
+          badge={{ text: "Próx.", variant: "secondary" }}
+        />
+        <KpiCard
+          label="Nuevos"
+          value="—"
+          hint="primeras visitas"
+          badge={{ text: "Próx.", variant: "secondary" }}
+        />
+        <KpiCard
+          label="Recurrentes"
+          value="—"
+          hint="vuelven seguido"
+          badge={{ text: "Próx.", variant: "secondary" }}
+        />
+        <KpiCard
+          label="Visitas"
+          value="—"
+          hint="check-ins"
+          badge={{ text: "Próx.", variant: "secondary" }}
+        />
+        <KpiCard
+          label="Canjes"
+          value="—"
+          hint="redeems"
+          badge={{ text: "Próx.", variant: "secondary" }}
+        />
+      </div>
+
+      {/* Tendencias (placeholder) */}
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+        <Card className="p-4">
+          <SectionHeader
+            title="Tendencia de actividad"
+            subtitle="Visitas por día/semana (próximo)"
+            right={<Badge variant="secondary">Próximamente</Badge>}
+          />
+          <Separator className="my-4" />
+          <div className="h-44 rounded-xl border bg-muted/30" />
+          <div className="mt-3 text-xs text-muted-foreground">
+            Cuando haya eventos suficientes, acá aparece el gráfico.
+          </div>
+        </Card>
+
+        <Card className="p-4">
+          <SectionHeader
+            title="Tendencia de canjes"
+            subtitle="Canjes por día/semana (próximo)"
+            right={<Badge variant="secondary">Próximamente</Badge>}
+          />
+          <Separator className="my-4" />
+          <div className="h-44 rounded-xl border bg-muted/30" />
+          <div className="mt-3 text-xs text-muted-foreground">
+            Te va a mostrar si los rewards convierten o no.
+          </div>
+        </Card>
+      </div>
+
+      {/* Insights + Quick actions */}
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
+        <Card className="p-4 lg:col-span-2">
+          <SectionHeader
+            title="Alertas / Insights"
+            subtitle="Lo que importa ahora (accionable)"
+          />
+          <Separator className="my-4" />
+
+          <div className="space-y-3">
+            {isFirstDayLike ? (
+              <>
+                <div className="rounded-xl border p-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="space-y-1">
+                      <div className="text-sm font-medium">
+                        Primeros pasos del sistema
+                      </div>
+                      <div className="text-sm text-muted-foreground">
+                        Para que el dashboard tenga vida: staff + QR/link + 1 reward listo.
+                      </div>
+                    </div>
+                    <Badge variant="secondary">Onboarding</Badge>
+                  </div>
+
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <Link href="/owner/onboarding">
+                      <Button size="sm" variant="secondary">
+                        Abrir checklist
+                      </Button>
+                    </Link>
+                    <Link href="/owner/rewards">
+                      <Button size="sm" variant="outline">
+                        Crear reward
+                      </Button>
+                    </Link>
+                  </div>
+                </div>
+
+                <div className="rounded-xl border p-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="space-y-1">
+                      <div className="text-sm font-medium">
+                        Sin actividad todavía
+                      </div>
+                      <div className="text-sm text-muted-foreground">
+                        Cuando entren los primeros eventos, vas a ver clientes nuevos / recurrentes / riesgo.
+                      </div>
+                    </div>
+                    <Badge variant="secondary">Esperando</Badge>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="rounded-xl border p-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="space-y-1">
+                      <div className="text-sm font-medium">
+                        📉 Recurrentes bajaron (ejemplo)
+                      </div>
+                      <div className="text-sm text-muted-foreground">
+                        Si esto pasa, proponemos misión de 2da visita + reward gancho.
+                      </div>
+                    </div>
+                    <Button size="sm" variant="outline">
+                      Ver detalle
+                    </Button>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        </Card>
+
+        <Card className="p-4">
+          <SectionHeader
+            title="Acciones rápidas"
+            subtitle="Para no quedar en blanco"
+          />
+          <Separator className="my-4" />
+
+          <div className="grid gap-2">
+            <Link href="/owner/rewards">
+              <Button className="w-full">Crear recompensa</Button>
+            </Link>
+
+            <Link href="/owner/customers">
+              <Button className="w-full" variant="secondary">
+                Ver clientes
+              </Button>
+            </Link>
+
+            <Link href="/owner/onboarding">
+              <Button className="w-full" variant="outline">
+                Ir a onboarding
+              </Button>
+            </Link>
+
+            <Button className="w-full" variant="outline" disabled>
+              Generar QR / Link (próximo)
+            </Button>
+
+            <Button className="w-full" variant="outline" disabled>
+              Invitar staff (próximo)
+            </Button>
+          </div>
+        </Card>
+      </div>
+
+      {/* Funnel + Rankings + System health */}
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
+        <Card className="p-4 lg:col-span-2">
+          <SectionHeader
+            title="Embudo del período"
+            subtitle="Visitas → Puntos → Rewards vistas → Canjes"
+            right={<Badge variant="secondary">Próximamente</Badge>}
+          />
+          <Separator className="my-4" />
+
+          <div className="grid grid-cols-1 gap-2 md:grid-cols-4">
+            {[
+              { label: "Visitas", value: "—" },
+              { label: "Puntos otorgados", value: "—" },
+              { label: "Rewards vistas", value: "—" },
+              { label: "Canjes", value: "—" },
+            ].map((x) => (
+              <div key={x.label} className="rounded-xl border p-3">
+                <div className="text-xs text-muted-foreground">{x.label}</div>
+                <div className="mt-1 text-xl font-semibold">{x.value}</div>
+              </div>
+            ))}
           </div>
 
-          <div style={{ display: "grid", gap: 8 }}>
-            <div style={{ fontSize: 12, opacity: 0.7 }}>Descripción (opcional)</div>
-            <Input name="description" placeholder="Ej: válido de lunes a jueves" />
+          <div className="mt-3 text-xs text-muted-foreground">
+            Esto te va a decir rápido si hay actividad pero no canjes (rewards flojas) o si falta captación.
           </div>
+        </Card>
 
-          <div style={{ display: "grid", gap: 8 }}>
-            <div style={{ fontSize: 12, opacity: 0.7 }}>Costo en puntos</div>
-            <Input name="points_cost" type="number" min={1} placeholder="Ej: 250" required />
-          </div>
-
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-            <div style={{ flex: "1 1 220px" }}>
-              <Button type="submit">Crear reward</Button>
+        <Card className="p-4">
+          <SectionHeader
+            title="Salud del sistema"
+            subtitle="¿Está vivo o está muerto?"
+          />
+          <Separator className="my-4" />
+          <div className="space-y-3 text-sm">
+            <div className="flex items-center justify-between">
+              <span className="text-muted-foreground">Onboarding</span>
+              {onboardingDone ? (
+                <Badge variant="secondary">Completo</Badge>
+              ) : (
+                <Badge variant="secondary">Paso {onboardingStep}</Badge>
+              )}
             </div>
-            <div style={{ flex: "1 1 220px", display: "grid", placeItems: "center", fontSize: 13, opacity: 0.75 }}>
-              Tip: empezá con 3 rewards (barato / medio / premium).
+
+            <div className="flex items-center justify-between">
+              <span className="text-muted-foreground">Rewards</span>
+              <span className="font-medium">{rewardsCount}</span>
+            </div>
+
+            <div className="flex items-center justify-between">
+              <span className="text-muted-foreground">Último evento</span>
+              <span className="text-muted-foreground">— (próximo)</span>
+            </div>
+
+            <div className="flex items-center justify-between">
+              <span className="text-muted-foreground">Staff activos</span>
+              <span className="text-muted-foreground">— (próximo)</span>
             </div>
           </div>
-        </form>
-      </Panel>
+        </Card>
+      </div>
 
-      {/* LIST */}
-      <Panel
-        title="Rewards existentes"
-        subtitle="Listado operativo."
-        right={<Link href="/owner/rewards">Ver todo</Link>}
-      >
-        {rewards.length === 0 ? (
-          <div style={{ fontSize: 13, opacity: 0.75 }}>
-            Todavía no hay rewards. Creá el primero arriba.
+      {/* Ranking simple (usa rewards ya existentes) */}
+      <Card className="p-4">
+        <SectionHeader
+          title="Ranking"
+          subtitle="Top rewards (por ahora ordenado por menor costo)"
+          right={
+            <Link href="/owner/rewards">
+              <Button size="sm" variant="outline">
+                Ver todo
+              </Button>
+            </Link>
+          }
+        />
+        <Separator className="my-4" />
+
+        {topRewards.length === 0 ? (
+          <div className="text-sm text-muted-foreground">
+            Todavía no tenés rewards. Creá el primero y listo.
           </div>
         ) : (
-          <div style={{ border: "1px solid #e5e7eb", borderRadius: 12, overflow: "hidden" }}>
-            <div style={{ padding: 10, borderBottom: "1px solid #e5e7eb", fontSize: 13 }}>
-              <strong>{rewards.length}</strong> rewards
-            </div>
+          <div className="grid gap-2">
+            {topRewards.map((r) => (
+              <div
+                key={r.id}
+                className="flex items-center justify-between rounded-xl border p-3"
+              >
+                <div className="min-w-0">
+                  <div className="truncate text-sm font-medium">
+                    {r.title}
+                  </div>
+                  <div className="truncate text-sm text-muted-foreground">
+                    {r.description ?? "Sin descripción"}
+                  </div>
+                </div>
 
-            <table style={{ width: "100%", borderCollapse: "collapse" }}>
-              <thead>
-                <tr style={{ background: "#fafafa", textAlign: "left" }}>
-                  <th style={{ padding: 10, fontSize: 13 }}>Título</th>
-                  <th style={{ padding: 10, fontSize: 13, width: 120 }}>Puntos</th>
-                  <th style={{ padding: 10, fontSize: 13, width: 120 }}>Activo</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rewards.map((r) => (
-                  <tr key={r.id} style={{ borderTop: "1px solid #f2f2f2" }}>
-                    <td style={{ padding: 10 }}>
-                      <div style={{ fontWeight: 800 }}>{r.title}</div>
-                      <div style={{ opacity: 0.7, fontSize: 12 }}>{r.description ?? "—"}</div>
-                    </td>
-                    <td style={{ padding: 10, fontSize: 13 }}>{r.points_cost}</td>
-                    <td style={{ padding: 10, fontSize: 13 }}>{r.is_active ? "Sí" : "No"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                <div className="flex items-center gap-2">
+                  <Badge variant={r.is_active ? "secondary" : "destructive"}>
+                    {r.is_active ? "Activo" : "Inactivo"}
+                  </Badge>
+                  <div className="text-sm font-semibold tabular-nums">
+                    {r.points_cost} pts
+                  </div>
+                </div>
+              </div>
+            ))}
           </div>
         )}
-      </Panel>
-
-      {/* FOOT NAV */}
-      <footer style={{ display: "flex", gap: 14, flexWrap: "wrap", fontSize: 13, opacity: 0.85 }}>
-        <Link href="/owner">Home</Link>
-        <Link href="/owner/dashboard">Dashboard</Link>
-        <Link href="/owner/rewards">Rewards</Link>
-        <Link href="/owner/onboarding">Onboarding</Link>
-      </footer>
-    </PageShell>
+      </Card>
+    </div>
   );
 }

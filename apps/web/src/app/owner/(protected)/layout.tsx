@@ -5,6 +5,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
+import OwnerTopbar from "./OwnerTopbar";
 
 /* =========================
    Cookies (compat sync/async)
@@ -23,10 +24,18 @@ async function getDevAuthUserId(): Promise<string | null> {
 
 const nav = [
   { href: "/owner", label: "Home" },
-  { href: "/owner/dashboard", label: "Dashboard" },
   { href: "/owner/rewards", label: "Rewards" },
   { href: "/owner/customers", label: "Clientes" },
-];
+
+  // FUTURO
+  { href: "#", label: "Misiones", soon: true },
+  { href: "#", label: "Campañas", soon: true },
+  { href: "#", label: "Segmentos", soon: true },
+  { href: "#", label: "Staff", soon: true },
+  { href: "#", label: "Sucursales", soon: true },
+  { href: "#", label: "Reportes", soon: true },
+  { href: "#", label: "Ajustes", soon: true },
+] as const;
 
 export default async function OwnerProtectedLayout({
   children,
@@ -63,21 +72,38 @@ export default async function OwnerProtectedLayout({
 
           <nav className="px-3 pb-3">
             <div className="grid gap-1">
-              {nav.map((i) => (
-                <Link
-                  key={i.href}
-                  href={i.href}
-                  className="
-                    rounded-xl px-3 py-2 text-sm
-                    text-foreground/80
-                    hover:bg-muted
-                    hover:text-foreground
-                    transition-colors
-                  "
-                >
-                  {i.label}
-                </Link>
-              ))}
+              {nav.map((i) => {
+                const isSoon = "soon" in i && i.soon;
+                if (isSoon) {
+                  return (
+                    <div
+                      key={i.label}
+                      className="flex items-center justify-between rounded-xl px-3 py-2 text-sm text-muted-foreground"
+                    >
+                      <span>{i.label}</span>
+                      <span className="rounded-full bg-muted px-2 py-1 text-[11px]">
+                        Próximamente
+                      </span>
+                    </div>
+                  );
+                }
+
+                return (
+                  <Link
+                    key={i.href}
+                    href={i.href}
+                    className="
+                      rounded-xl px-3 py-2 text-sm
+                      text-foreground/80
+                      hover:bg-muted
+                      hover:text-foreground
+                      transition-colors
+                    "
+                  >
+                    {i.label}
+                  </Link>
+                );
+              })}
             </div>
           </nav>
 
@@ -109,23 +135,8 @@ export default async function OwnerProtectedLayout({
         <div className="flex min-w-0 flex-1 flex-col">
           {/* Topbar */}
           <header className="sticky top-0 z-20 border-b bg-background/70 backdrop-blur">
-            <div className="flex items-center justify-between gap-3 px-4 py-3 md:px-6">
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-semibold">Panel</span>
-                <span className="text-xs text-muted-foreground">(Owner)</span>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <div className="hidden md:block">
-                  <div className="rounded-full border bg-background px-3 py-1 text-xs text-muted-foreground">
-                    ⌘K Buscar (próximo)
-                  </div>
-                </div>
-
-                <Link href="/owner/rewards">
-                  <Button size="sm">Nuevo reward</Button>
-                </Link>
-              </div>
+            <div className="px-4 py-3 md:px-6">
+              <OwnerTopbar />
             </div>
           </header>
 

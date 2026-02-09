@@ -11,7 +11,8 @@
     "dev": "pnpm -r dev",
     "build": "pnpm -r build",
     "lint": "pnpm -r lint",
-    "typecheck": "pnpm -r typecheck"
+    "typecheck": "pnpm -r typecheck",
+    "devSerafo": "concurrently -n web,landing -c blue,green \"pnpm -C apps/web dev -p 3000\" \"pnpm -C apps/landing dev -p 3001\""
   },
   "repository": {
     "type": "git",
@@ -30,6 +31,8 @@
     "bcryptjs": "^3.0.3"
   },
   "devDependencies": {
-    "@types/bcryptjs": "^2.4.6"
+    "@types/bcryptjs": "^2.4.6",
+    "concurrently": "^9.2.1"
   }
+  
 }
