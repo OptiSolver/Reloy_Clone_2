@@ -35,67 +35,45 @@
 }
 
 /* =========================
-   Base Colors
+   LOOP Dark Premium Colors
 ========================= */
 
 :root {
-  --radius: 0.625rem;
+  --radius: 1rem;
 
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
+  /* Deep black/purple background */
+  --background: oklch(0.12 0.01 264);
+  --foreground: oklch(0.98 0 0);
 
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
+  /* Dark cards */
+  --card: oklch(0.18 0.01 264);
+  --card-foreground: oklch(0.98 0 0);
 
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
+  --popover: oklch(0.18 0.01 264);
+  --popover-foreground: oklch(0.98 0 0);
 
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
+  /* Vibrant Purple Primary */
+  --primary: oklch(0.65 0.25 290);
+  --primary-foreground: oklch(1 0 0);
 
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
+  /* Golden Yellow Secondary */
+  --secondary: oklch(0.75 0.15 85);
+  --secondary-foreground: oklch(0.1 0 0);
 
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
+  /* Muted dark */
+  --muted: oklch(0.25 0.01 264);
+  --muted-foreground: oklch(0.65 0 0);
 
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
+  /* Accent purple lighter */
+  --accent: oklch(0.7 0.2 290);
+  --accent-foreground: oklch(1 0 0);
 
   --destructive: oklch(0.577 0.245 27.325);
 
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-}
-
-.dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-
-  --destructive: oklch(0.704 0.191 22.216);
-
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
+  /* Very subtle borders */
+  --border: oklch(0.25 0.01 264);
+  --input: oklch(0.25 0.01 264);
+  --ring: oklch(0.65 0.25 290);
 }
 
 /* =========================
@@ -108,6 +86,22 @@
   }
 
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground antialiased;
+  }
+}
+
+/* =========================
+   Custom Utilities
+========================= */
+
+@layer utilities {
+  .glass-card {
+    background: oklch(1 0 0 / 0.03);
+    backdrop-filter: blur(12px);
+    border: 1px solid oklch(1 0 0 / 0.08);
+  }
+
+  .stat-gradient {
+    background: linear-gradient(135deg, oklch(0.65 0.25 290 / 0.15), oklch(0.75 0.15 85 / 0.08));
   }
 }

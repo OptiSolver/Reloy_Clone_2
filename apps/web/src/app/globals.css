@@ -1,77 +1,49 @@
 @import "tailwindcss";
 
 /* =========================================================
-   LOOP — Tokens de marca (v1)
-   Objetivo: más contraste, más identidad, menos "template gris"
+   LOOP — Nixtio Style (Dark Premium)
+   Purple / Golden Yellow / Deep Dark Background
 ========================================================= */
 
 @layer base {
   :root {
-    /* Base */
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
+    /* Deep black/dark purple background - más oscuro que antes */
+    --background: 240 10% 3.9%;
+    --foreground: 0 0% 98%;
 
-    /* Cards / popovers */
-    --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
+    /* Cards con glassmorphism más sutil */
+    --card: 240 10% 8%;
+    --card-foreground: 0 0% 98%;
+    --popover: 240 10% 8%;
+    --popover-foreground: 0 0% 98%;
 
-    /* LOOP Primary: verde eléctrico */
-    --primary: 154 85% 37%;
+    /* Primary: Vibrant Purple (sin cambios, funciona bien) */
+    --primary: 262 83% 58%;
     --primary-foreground: 0 0% 100%;
 
-    /* Secondary y muted */
-    --secondary: 210 40% 96%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
+    /* Secondary: Golden Yellow/Orange gradient accent */
+    --secondary: 38 92% 50%;
+    --secondary-foreground: 0 0% 0%;
 
-    --muted: 210 40% 96%;
-    --muted-foreground: 215.4 16.3% 46.9%;
+    /* Muted colors más sutiles */
+    --muted: 240 10% 15%;
+    --muted-foreground: 240 5% 64.9%;
 
-    /* Accent (cyan premium) */
-    --accent: 190 95% 40%;
+    /* Accent: Lighter Purple for hover states */
+    --accent: 270 70% 60%;
     --accent-foreground: 0 0% 100%;
 
-    /* Estados */
-    --destructive: 0 84% 55%;
-    --destructive-foreground: 0 0% 100%;
-
-    /* Bordes + focus */
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 154 85% 37%;
-
-    /* Radius más premium */
-    --radius: 1rem;
-  }
-
-  .dark {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
-
-    --card: 222.2 84% 6%;
-    --card-foreground: 210 40% 98%;
-    --popover: 222.2 84% 6%;
-    --popover-foreground: 210 40% 98%;
-
-    --primary: 154 85% 45%;
-    --primary-foreground: 0 0% 100%;
-
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
-
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
-
-    --accent: 190 95% 46%;
-    --accent-foreground: 0 0% 100%;
-
+    /* Destructive */
     --destructive: 0 70% 50%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 154 85% 45%;
+    /* Borders más sutiles en dark mode */
+    --border: 240 10% 14%;
+    --input: 240 10% 14%;
+    --ring: 262 83% 58%;
+
+    /* Radius premium */
+    --radius: 1rem;
   }
 
   * {
@@ -79,16 +51,24 @@
   }
 
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground antialiased;
   }
 }
 
-/* Utilidad para “shine” suave (hero) */
+/* Gradient utilities para cards premium */
 @layer utilities {
-  .loop-hero {
+  .card-glow {
     background:
-      radial-gradient(900px circle at 50% 0px, hsl(var(--primary) / 0.18), transparent 55%),
-      radial-gradient(900px circle at 15% 120px, hsl(var(--accent) / 0.12), transparent 50%),
-      linear-gradient(to bottom, transparent, rgba(0,0,0,0.03));
+      radial-gradient(600px circle at var(--mouse-x, 50%) var(--mouse-y, 50%),
+        hsl(var(--primary) / 0.08),
+        transparent 40%);
+  }
+
+  .glass-card {
+    @apply bg-white/[0.03] backdrop-blur-xl border border-white/[0.08];
+  }
+
+  .stat-gradient {
+    background: linear-gradient(135deg, hsl(var(--primary) / 0.15), hsl(var(--secondary) / 0.08));
   }
 }

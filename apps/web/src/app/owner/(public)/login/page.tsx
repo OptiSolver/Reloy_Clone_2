@@ -136,14 +136,16 @@ async function doDevLoginById(formData: FormData) {
 /* =========================
    Page
 ========================= */
-export default function OwnerLoginPage({
+export default async function OwnerLoginPage({
   searchParams,
 }: {
-  searchParams?: { error?: string };
+  searchParams?: Promise<{ error?: string }>;
 }) {
+  const params = await searchParams;
+
   return (
     <OwnerAuthClient
-      error={searchParams?.error}
+      error={params?.error}
       isDev={!isProdLike()}
       doOwnerLogin={doOwnerLogin}
       doOwnerRegister={doOwnerRegister}

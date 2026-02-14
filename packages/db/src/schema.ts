@@ -366,3 +366,41 @@ export const missionProgress = pgTable(
     idxCustomer: index("idx_mission_progress_customer_id").on(t.customerId),
   })
 );
+
+/**
+ * POINTS_LEDGER
+ * Historial transaccional de puntos (doble entrada / auditoría).
+ * Fuente de verdad para recálculos y seguridad.
+ */
+export const pointsLedger = pgTable(
+  "points_ledger",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+
+    merchantId: uuid("merchant_id")
+      .notNull()
+      .references(() => merchants.id),
+
+    customerId: uuid("customer_id")
+      .notNull()
+      .references(() => customers.id),
+
+    delta: integer("delta").notNull(), // + para award, - para redeem
+
+    // Evento que originó este movimiento (idempotencia)
+    sourceEventId: uuid("source_event_id")
+      .notNull()
+      .references(() => events.id),
+
+    reason: text("reason").notNull(), // tracking: "visit", "redeem", "manual", etc.
+
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => ({
+    // Un evento solo puede generar UN movimiento en el ledger (idempotencia fuerte)
+    uniqSourceEvent: uniqueIndex("uq_points_ledger_source_event").on(t.sourceEventId),
+
+    idxMerchant: index("idx_points_ledger_merchant").on(t.merchantId),
+    idxCustomer: index("idx_points_ledger_customer").on(t.customerId),
+  })
+);

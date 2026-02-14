@@ -1,157 +1,68 @@
-import { pool } from "@loop/db";
-import { RedeemInput } from "../contracts/redeem";
-
-type PgError = { code?: string };
+import { db, rewards, rewardRedemptions, events, eq, and } from "@loop/db";
+import { RedeemInput } from "../contracts/redeem"; // Asegurarse de que este tipo existe y es correcto
+import { addPointsLedgerEntry, getPointsBalance } from "./ledger";
 
 export async function redeemReward(input: RedeemInput) {
   const { merchantId, branchId, customerId, staffId, rewardId } = input;
 
-  const client = await pool.connect();
-
-  try {
-    await client.query("BEGIN");
-
-    // 1) reward (points_cost)
-    const rewardRes = await client.query(
-      `
-      SELECT id, merchant_id, points_cost, is_active
-      FROM rewards
-      WHERE id = $1 AND merchant_id = $2
-      LIMIT 1
-      `,
-      [rewardId, merchantId]
-    );
-
-    const reward = rewardRes.rows[0] as
-      | {
-          id: string;
-          merchant_id: string;
-          points_cost: number;
-          is_active: boolean;
-        }
-      | undefined;
+  return await db.transaction(async (tx) => {
+    // 1. Obtener Reward y Validar
+    const reward = await tx.query.rewards.findFirst({
+      where: and(eq(rewards.id, rewardId), eq(rewards.merchantId, merchantId)),
+    });
 
     if (!reward) throw new Error("reward_not_found");
-    if (!reward.is_active) throw new Error("reward_inactive");
+    if (!reward.isActive) throw new Error("reward_inactive");
 
-    // 2) balance (MVP simple)
-    const balRes = await client.query(
-      `
-      SELECT COALESCE(SUM(delta_points),0) AS balance
-      FROM points_ledger
-      WHERE merchant_id = $1 AND customer_id = $2
-      `,
-      [merchantId, customerId]
-    );
+    // 2. Verificar Balance (usando snapshot de memberships para rapidez, o ledger si se prefiere strict)
+    // Para seguridad transaccional fuerte, podríamos bloquear el registro de membership,
+    // pero por ahora checkeamos el snapshot que se actualiza atómicamente en ledger.ts
+    const currentBalance = await getPointsBalance(merchantId, customerId);
 
-    const balance = Number(balRes.rows?.[0]?.balance ?? 0);
-
-    if (balance < reward.points_cost) {
+    if (currentBalance < reward.pointsCost) {
       const err: any = new Error("insufficient_points");
-      err.balance = balance;
-      err.required = reward.points_cost;
+      err.balance = currentBalance;
+      err.required = reward.pointsCost;
       throw err;
     }
 
-    // 3) redemption (puede fallar por unique index -> ya canjeado)
-    let redemption: any;
-    try {
-      const redemptionRes = await client.query(
-        `
-        INSERT INTO reward_redemptions (
-          merchant_id,
-          reward_id,
-          customer_id,
-          staff_id,
-          branch_id,
-          points_spent,
-          status
-        )
-        VALUES ($1, $2, $3, $4, $5, $6, 'approved')
-        RETURNING *
-        `,
-        [
-          merchantId,
-          rewardId,
-          customerId,
-          staffId ?? null,
-          branchId ?? null,
-          reward.points_cost,
-        ]
-      );
-
-      redemption = redemptionRes.rows[0];
-    } catch (e: unknown) {
-      const pg = e as PgError;
-
-      // 23505 = unique_violation
-      if (pg?.code === "23505") {
-        // devolvemos un error limpio (y opcionalmente info)
-        throw new Error("already_redeemed");
-      }
-
-      throw e;
-    }
-
-    // 4) event redeem
-    const eventRes = await client.query(
-      `
-      INSERT INTO events (
-        merchant_id,
-        branch_id,
-        customer_id,
-        staff_id,
-        type,
-        payload
-      )
-      VALUES ($1, $2, $3, $4, 'redeem', $5)
-      RETURNING *
-      `,
-      [
+    // 3. Crear Redemption Record
+    const [redemption] = await tx
+      .insert(rewardRedemptions)
+      .values({
         merchantId,
-        branchId ?? null,
+        rewardId,
         customerId,
-        staffId ?? null,
-        { reward_id: rewardId },
-      ]
+        staffId: staffId ?? null,
+        branchId: branchId ?? null,
+        pointsSpent: reward.pointsCost,
+        status: "approved",
+      })
+      .returning();
+
+    // 4. Crear Evento 'redeem'
+    const [event] = await tx
+      .insert(events)
+      .values({
+        merchantId,
+        branchId: branchId ?? null,
+        customerId,
+        staffId: staffId ?? null,
+        type: "redeem",
+        payload: { reward_id: rewardId, redemption_id: redemption.id },
+      })
+      .returning();
+
+    // 5. Descontar Puntos en Ledger (Delta negativo)
+    // Esto también actualiza el balance en memberships
+    await addPointsLedgerEntry(
+      merchantId,
+      customerId,
+      -reward.pointsCost,
+      event.id,
+      "redeem_reward"
     );
 
-    const event = eventRes.rows[0] as { id: string };
-
-    // 5) ledger (idempotente por source_event_id)
-    await client.query(
-      `
-      INSERT INTO points_ledger (
-        merchant_id,
-        customer_id,
-        branch_id,
-        staff_id,
-        source_event_id,
-        delta_points,
-        reason,
-        meta
-      )
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
-      ON CONFLICT (source_event_id) DO NOTHING
-      `,
-      [
-        merchantId,
-        customerId,
-        branchId ?? null,
-        staffId ?? null,
-        event.id,
-        -reward.points_cost,
-        "redeem_reward",
-        { reward_id: rewardId, redemption_id: redemption?.id ?? null },
-      ]
-    );
-
-    await client.query("COMMIT");
     return { redemption, event };
-  } catch (err) {
-    await client.query("ROLLBACK");
-    throw err;
-  } finally {
-    client.release();
-  }
+  });
 }

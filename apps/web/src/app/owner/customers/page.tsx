@@ -1,366 +1,220 @@
-// apps/web/src/app/owner/customers/page.tsx
-export const runtime = "nodejs";
+"use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
-import { cookies } from "next/headers";
-
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Separator } from "@/components/ui/separator";
+import { Users, Search } from "lucide-react";
 
-/* =========================
-   TIPOS
-========================= */
-
-type CustomerRow = {
+interface Customer {
   customer_id: string;
-  merchant_id: string;
-  merchant_name: string;
-  status: string;
-  points_balance: number;
-
   identifier_type: string | null;
   identifier_value_raw: string | null;
   identifier_value_normalized: string | null;
-
+  balance: number;
   last_event_type: string | null;
   last_event_at: string | null;
-  branch_name: string | null;
-};
-
-type OwnerCustomersResponse = {
-  ok: boolean;
-  error?: string;
-
-  owner?: { id: string; name: string };
-  merchants?: Array<{ id: string; name: string }>;
-  defaults?: { merchant_id: string | null };
-
-  count?: number;
-  customers?: CustomerRow[];
-};
-
-/* =========================
-   Cookies (compat sync/async)
-========================= */
-
-async function getCookieStore() {
-  const c = cookies() as unknown;
-  return (c instanceof Promise ? await c : c) as {
-    get(name: string): { value: string } | undefined;
-  };
 }
 
-async function getDevAuthUserId(): Promise<string | null> {
-  const c = await getCookieStore();
-  return c.get("dev_auth_user_id")?.value ?? null;
-}
+export default function OwnerCustomersPage() {
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [error, setError] = useState<string | null>(null);
 
-/* =========================
-   FETCH
-========================= */
+  useEffect(() => {
+    async function fetchCustomers() {
+      try {
+        const merchantId = "550e8400-e29b-41d4-a716-446655440000"; // hardcoded por ahora
+        const res = await fetch(`/api/customers?merchant_id=${merchantId}&limit=100`);
+        const data = await res.json();
 
-const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000";
+        if (data.ok) {
+          setCustomers(data.customers || []);
+        } else {
+          setError(data.error || "Error desconocido");
+        }
+      } catch (err) {
+        setError("Error al cargar clientes");
+        console.error(err);
+      } finally {
+        setLoading(false);
+      }
+    }
 
-async function fetchOwnerCustomers(authUserId: string, q?: string) {
-  const url = new URL("/api/owner/customers", BASE_URL);
-  if (q && q.trim().length > 0) url.searchParams.set("q", q.trim());
+    fetchCustomers();
+  }, []);
 
-  const res = await fetch(url.toString(), {
-    headers: { "x-auth-user-id": authUserId },
-    cache: "no-store",
-  });
-
-  const data = (await res.json()) as OwnerCustomersResponse;
-  return { res, data };
-}
-
-/* =========================
-   HELPERS
-========================= */
-
-function formatInt(n: number) {
-  return new Intl.NumberFormat("es-AR").format(n);
-}
-
-function shortDate(iso: string | null | undefined) {
-  if (!iso) return "—";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "—";
-  return d.toLocaleString("es-AR", {
-    year: "2-digit",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
-function StatusBadge({ status }: { status: string }) {
-  const s = (status ?? "").toLowerCase();
-
-  // Mapeo simple (lo refinamos cuando “status” esté canonizado)
-  if (s.includes("lost") || s.includes("perd")) return <Badge variant="destructive">Perdido</Badge>;
-  if (s.includes("risk") || s.includes("ries")) return <Badge variant="secondary">En riesgo</Badge>;
-  if (s.includes("recurr") || s.includes("repeat")) return <Badge variant="secondary">Recurrente</Badge>;
-  if (s.includes("new") || s.includes("nuevo")) return <Badge variant="secondary">Nuevo</Badge>;
-
-  return <Badge variant="secondary">{status || "—"}</Badge>;
-}
-
-/* =========================
-   PAGE
-========================= */
-
-export default async function OwnerCustomersPage({
-  searchParams,
-}: {
-  searchParams?: { q?: string };
-}) {
-  const authUserId = await getDevAuthUserId();
-
-  if (!authUserId) {
+  if (loading) {
     return (
-      <div className="mx-auto w-full max-w-5xl px-4 py-8">
-        <Card className="p-5">
-          <div className="text-lg font-semibold">Clientes</div>
-          <div className="mt-2 text-sm text-muted-foreground">
-            Falta <code className="font-mono">dev_auth_user_id</code> en cookie (dev).
-          </div>
-          <div className="mt-3 text-sm text-muted-foreground">
-            Tip: iniciá sesión desde <code className="font-mono">/owner/login</code> para setearla.
-          </div>
-          <div className="mt-4">
-            <Link href="/owner">
-              <Button variant="outline">Volver</Button>
-            </Link>
-          </div>
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="text-muted-foreground">Cargando clientes...</div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <Card className="p-8 text-center max-w-md">
+          <h2 className="text-xl font-bold mb-2">Error al cargar datos</h2>
+          <p className="text-muted-foreground mb-4">{error}</p>
+          <Button onClick={() => window.location.reload()}>Reintentar</Button>
         </Card>
       </div>
     );
   }
 
-  const q = (searchParams?.q ?? "").trim();
-
-  const { res, data } = await fetchOwnerCustomers(authUserId, q);
-
-  if (!data.ok) {
+  const filteredCustomers = customers.filter((c) => {
+    if (!searchQuery) return true;
+    const query = searchQuery.toLowerCase();
     return (
-      <div className="mx-auto w-full max-w-5xl px-4 py-8">
-        <Card className="p-5">
-          <div className="text-lg font-semibold">Clientes</div>
-          <div className="mt-2 text-sm">
-            Error: <code className="font-mono">{data.error ?? "unknown_error"}</code>
-          </div>
-          <div className="mt-2 text-sm text-muted-foreground">HTTP: {res.status}</div>
-          <div className="mt-4">
-            <Link href="/owner">
-              <Button variant="outline">Volver</Button>
-            </Link>
-          </div>
-        </Card>
-      </div>
+      c.identifier_value_raw?.toLowerCase().includes(query) ||
+      c.identifier_value_normalized?.toLowerCase().includes(query) ||
+      c.customer_id.toLowerCase().includes(query)
     );
-  }
+  });
 
-  const ownerName = data.owner?.name ?? "Owner";
-  const merchantName = data.merchants?.[0]?.name ?? "—";
-  const customers = data.customers ?? [];
-  const count = data.count ?? customers.length;
-
-  const statusCounts = customers.reduce<Record<string, number>>((acc, c) => {
-    const k = (c.status ?? "unknown").toLowerCase();
-    acc[k] = (acc[k] ?? 0) + 1;
-    return acc;
-  }, {});
-
-  // intentamos agrupar “lo importante” aunque el status sea libre
-  const newCount = Object.entries(statusCounts).reduce((n, [k, v]) => (k.includes("new") || k.includes("nuevo") ? n + v : n), 0);
-  const recurrentCount = Object.entries(statusCounts).reduce((n, [k, v]) => (k.includes("recurr") || k.includes("repeat") ? n + v : n), 0);
-  const riskCount = Object.entries(statusCounts).reduce((n, [k, v]) => (k.includes("risk") || k.includes("ries") ? n + v : n), 0);
-  const lostCount = Object.entries(statusCounts).reduce((n, [k, v]) => (k.includes("lost") || k.includes("perd") ? n + v : n), 0);
+  const totalBalance = customers.reduce((acc, c) => acc + (c.balance || 0), 0);
+  const recentCustomers = customers.filter((c) => {
+    if (!c.last_event_at) return false;
+    const daysSinceLastEvent = (Date.now() - new Date(c.last_event_at).getTime()) / (1000 * 60 * 60 * 24);
+    return daysSinceLastEvent <= 30;
+  }).length;
 
   return (
-    <div className="mx-auto w-full max-w-6xl px-4 py-6 md:px-6">
+    <div className="space-y-8">
       {/* Header */}
-      <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-        <div className="space-y-1">
-          <div className="text-xs text-muted-foreground">Owner • {merchantName}</div>
-          <h1 className="text-3xl font-semibold tracking-tight">Clientes</h1>
-          <div className="text-sm text-muted-foreground">
-            Datos operativos para entender actividad y segmentación (mientras el staff carga eventos).
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <Link href="/owner">
-            <Button variant="outline">Volver</Button>
-          </Link>
-          <Link href="/owner">
-            <Button variant="secondary">Ir a Home</Button>
-          </Link>
-        </div>
+      <div>
+        <h1 className="text-4xl font-bold mb-2">Clientes</h1>
+        <p className="text-muted-foreground">
+          Gestiona y visualiza la información de tus {customers.length} clientes
+        </p>
       </div>
 
-      <Separator className="my-6" />
+      {/* KPI Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <Card className="p-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-muted-foreground">Total Clientes</p>
+              <h3 className="text-3xl font-bold mt-2">{customers.length}</h3>
+            </div>
+            <Users className="w-8 h-8 text-primary" />
+          </div>
+        </Card>
+
+        <Card className="p-6">
+          <div>
+            <p className="text-sm text-muted-foreground">Activos (30d)</p>
+            <h3 className="text-3xl font-bold mt-2">{recentCustomers}</h3>
+          </div>
+        </Card>
+
+        <Card className="p-6">
+          <div>
+            <p className="text-sm text-muted-foreground">Con Saldo</p>
+            <h3 className="text-3xl font-bold mt-2">
+              {customers.filter((c) => c.balance > 0).length}
+            </h3>
+          </div>
+        </Card>
+
+        <Card className="p-6">
+          <div>
+            <p className="text-sm text-muted-foreground">Puntos Totales</p>
+            <h3 className="text-3xl font-bold mt-2">{totalBalance.toLocaleString()}</h3>
+          </div>
+        </Card>
+      </div>
 
       {/* Search */}
-      <Card className="p-4">
-        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <div>
-            <div className="text-base font-semibold">Búsqueda</div>
-            <div className="text-sm text-muted-foreground">
-              Por teléfono / email / identificador. ({ownerName})
-            </div>
-          </div>
-
-          <form action="/owner/customers" className="flex w-full gap-2 md:w-[520px]">
-            <Input
-              name="q"
-              defaultValue={q}
-              placeholder="Buscar cliente…"
-            />
-            <Button type="submit">Buscar</Button>
-            <Link href="/owner/customers">
-              <Button type="button" variant="outline">
-                Reset
-              </Button>
-            </Link>
-          </form>
+      <Card className="p-6">
+        <div className="flex items-center gap-4">
+          <Search className="w-5 h-5 text-muted-foreground" />
+          <Input
+            placeholder="Buscar por email, teléfono o ID..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="flex-1"
+          />
+          {searchQuery && (
+            <Button variant="outline" onClick={() => setSearchQuery("")}>
+              Limpiar
+            </Button>
+          )}
         </div>
       </Card>
 
-      {/* KPIs */}
-      <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
-        <Card className="p-4">
-          <div className="text-sm text-muted-foreground">Total</div>
-          <div className="mt-2 text-2xl font-semibold tabular-nums">{formatInt(count)}</div>
-          <div className="mt-1 text-xs text-muted-foreground">Clientes detectados</div>
+      {/* Customers Table */}
+      {filteredCustomers.length === 0 ? (
+        <Card className="p-12 text-center">
+          <Users className="w-16 h-16 text-muted-foreground mx-auto mb-4" />
+          <h2 className="text-2xl font-bold mb-2">
+            {searchQuery ? "No se encontraron resultados" : "No hay clientes aún"}
+          </h2>
+          <p className="text-muted-foreground">
+            {searchQuery
+              ? "Intenta con otro término de búsqueda"
+              : "Los clientes aparecerán aquí cuando se registren eventos"}
+          </p>
         </Card>
+      ) : (
+        <Card className="p-6">
+          <h2 className="text-xl font-semibold mb-6">
+            Lista de Clientes ({filteredCustomers.length})
+          </h2>
+          <div className="space-y-3">
+            {filteredCustomers.map((customer) => (
+              <div
+                key={customer.customer_id}
+                className="flex items-center justify-between p-4 rounded-lg bg-white/5 hover:bg-white/10 transition-colors"
+              >
+                <div className="flex-1">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center">
+                      <Users className="w-5 h-5 text-primary" />
+                    </div>
+                    <div>
+                      <h3 className="font-semibold">
+                        {customer.identifier_value_raw || customer.customer_id.substring(0, 8)}
+                      </h3>
+                      <div className="flex items-center gap-2 mt-1 text-sm text-muted-foreground">
+                        {customer.identifier_type && (
+                          <Badge variant="secondary" className="text-xs">
+                            {customer.identifier_type}
+                          </Badge>
+                        )}
+                        <span className="font-mono text-xs">
+                          {customer.customer_id.substring(0, 8)}...
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
 
-        <Card className="p-4">
-          <div className="text-sm text-muted-foreground">Nuevos</div>
-          <div className="mt-2 text-2xl font-semibold tabular-nums">{formatInt(newCount)}</div>
-          <div className="mt-1 text-xs text-muted-foreground">Primer contacto</div>
-        </Card>
+                <div className="flex items-center gap-6">
+                  <div className="text-right">
+                    <p className="text-sm text-muted-foreground">Puntos</p>
+                    <p className="text-lg font-bold">{customer.balance}</p>
+                  </div>
 
-        <Card className="p-4">
-          <div className="text-sm text-muted-foreground">Recurrentes</div>
-          <div className="mt-2 text-2xl font-semibold tabular-nums">{formatInt(recurrentCount)}</div>
-          <div className="mt-1 text-xs text-muted-foreground">Vuelven seguido</div>
-        </Card>
-
-        <Card className="p-4">
-          <div className="text-sm text-muted-foreground">En riesgo</div>
-          <div className="mt-2 text-2xl font-semibold tabular-nums">{formatInt(riskCount)}</div>
-          <div className="mt-1 text-xs text-muted-foreground">A recuperar</div>
-        </Card>
-
-        <Card className="p-4">
-          <div className="text-sm text-muted-foreground">Perdidos</div>
-          <div className="mt-2 text-2xl font-semibold tabular-nums">{formatInt(lostCount)}</div>
-          <div className="mt-1 text-xs text-muted-foreground">Inactivos</div>
-        </Card>
-      </div>
-
-      {/* Tabla */}
-      <Card className="mt-6 p-4">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <div className="text-base font-semibold">Listado</div>
-            <div className="text-sm text-muted-foreground">
-              {formatInt(customers.length)} filas • Mostramos máxima data disponible.
-            </div>
+                  {customer.last_event_at && (
+                    <div className="text-right">
+                      <p className="text-sm text-muted-foreground">Última visita</p>
+                      <p className="text-sm">
+                        {new Date(customer.last_event_at).toLocaleDateString('es-AR')}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
           </div>
-          <Badge variant="secondary">v1</Badge>
-        </div>
-
-        <Separator className="my-4" />
-
-        {customers.length === 0 ? (
-          <div className="rounded-2xl border bg-muted/20 p-6">
-            <div className="text-sm font-semibold">Todavía no hay clientes</div>
-            <div className="mt-1 text-sm text-muted-foreground">
-              Cuando el staff empiece a registrar eventos, acá vas a ver actividad real.
-            </div>
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[1080px] border-collapse">
-              <thead>
-                <tr className="text-left text-xs text-muted-foreground">
-                  <th className="px-3 py-2">Cliente</th>
-                  <th className="px-3 py-2">Status</th>
-                  <th className="px-3 py-2">Puntos</th>
-                  <th className="px-3 py-2">Último evento</th>
-                  <th className="px-3 py-2">Fecha</th>
-                  <th className="px-3 py-2">Sucursal</th>
-                  <th className="px-3 py-2">Merchant</th>
-                  <th className="px-3 py-2">Acción</th>
-                </tr>
-              </thead>
-
-              <tbody>
-                {customers.map((c) => (
-                  <tr key={c.customer_id} className="border-t">
-                    <td className="px-3 py-3 align-top">
-                      <div className="text-sm font-semibold">
-                        {c.identifier_value_raw ?? c.identifier_value_normalized ?? c.customer_id}
-                      </div>
-                      <div className="mt-1 text-xs text-muted-foreground">
-                        {c.identifier_type ?? "—"} •{" "}
-                        <span className="font-mono">{c.customer_id}</span>
-                      </div>
-                    </td>
-
-                    <td className="px-3 py-3 align-top">
-                      <StatusBadge status={c.status} />
-                      <div className="mt-1 text-[11px] text-muted-foreground">
-                        raw: <span className="font-mono">{c.status ?? "—"}</span>
-                      </div>
-                    </td>
-
-                    <td className="px-3 py-3 align-top">
-                      <div className="text-sm font-semibold tabular-nums">{formatInt(c.points_balance ?? 0)}</div>
-                      <div className="mt-1 text-xs text-muted-foreground">balance</div>
-                    </td>
-
-                    <td className="px-3 py-3 align-top">
-                      <div className="text-sm font-medium">{c.last_event_type ?? "—"}</div>
-                      <div className="mt-1 text-xs text-muted-foreground">
-                        normalizado: {c.identifier_value_normalized ?? "—"}
-                      </div>
-                    </td>
-
-                    <td className="px-3 py-3 align-top text-sm text-muted-foreground">
-                      {shortDate(c.last_event_at)}
-                    </td>
-
-                    <td className="px-3 py-3 align-top text-sm">
-                      {c.branch_name ?? <span className="text-muted-foreground">—</span>}
-                    </td>
-
-                    <td className="px-3 py-3 align-top text-sm">
-                      <div className="font-medium">{c.merchant_name ?? "—"}</div>
-                      <div className="mt-1 text-[11px] text-muted-foreground font-mono">{c.merchant_id}</div>
-                    </td>
-
-                    <td className="px-3 py-3 align-top">
-                      <Link href={`/owner/customers/${c.customer_id}`}>
-                        <Button size="sm" variant="outline">
-                          Ver detalle
-                        </Button>
-                      </Link>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </Card>
+        </Card>
+      )}
     </div>
   );
 }
